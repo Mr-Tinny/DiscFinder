@@ -101,6 +101,23 @@
           </label>
         </div>
 
+        <section class="disc-library" aria-labelledby="libraryTitle">
+          <div class="library-header">
+            <div>
+              <strong id="libraryTitle">My Bag</strong>
+              <span id="libraryCount">No saved discs</span>
+            </div>
+            <button id="saveDiscButton" class="secondary-button compact-button" type="button">Save</button>
+          </div>
+
+          <label class="disc-name-field">
+            <span class="sr-only">Disc name</span>
+            <input id="discNameInput" type="text" maxlength="32" placeholder="Name this disc">
+          </label>
+
+          <div id="discList" class="disc-list" aria-live="polite"></div>
+        </section>
+
         <div class="audio-row">
           <label class="toggle">
             <input id="audioToggle" type="checkbox" checked>

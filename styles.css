@@ -9,6 +9,8 @@
   --ok: #42e68e;
   --warn: #ffd166;
   --drawer-peek: 56px;
+  --reticle-y-open: 24%;
+  --reticle-y-collapsed: 45%;
 }
 
 * {
@@ -122,7 +124,7 @@ video {
 .reticle {
   position: absolute;
   left: 50%;
-  top: 45%;
+  top: var(--reticle-y-open);
   width: 86px;
   height: 86px;
   transform: translate(-50%, -50%);
@@ -130,6 +132,12 @@ video {
   border-radius: 999px;
   opacity: 0.8;
   filter: drop-shadow(0 1px 8px rgba(0, 0, 0, 0.45));
+  transition: top 260ms ease;
+  z-index: 2;
+}
+
+.app-shell.controls-collapsed .reticle {
+  top: var(--reticle-y-collapsed);
 }
 
 .reticle::before,
@@ -191,7 +199,7 @@ video {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: min(84vh, 640px);
+  max-height: min(58vh, 520px);
   overflow-y: auto;
   overscroll-behavior: contain;
   display: grid;
@@ -320,6 +328,121 @@ input[type="color"] {
   border: 1px solid rgba(255, 255, 255, 0.36);
   border-radius: 999px;
   background: var(--target);
+}
+
+.disc-library {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.library-header div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.library-header strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.library-header span,
+.disc-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding-inline: 12px;
+}
+
+.disc-name-field input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.disc-name-field input::placeholder {
+  color: rgba(244, 251, 247, 0.52);
+}
+
+.disc-list {
+  display: grid;
+  gap: 8px;
+}
+
+.disc-empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.disc-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.disc-swatch {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+}
+
+.disc-info {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.disc-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disc-action {
+  min-height: 31px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.09);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.disc-action.delete {
+  color: #ffd1d1;
 }
 
 .wheel-wrap {

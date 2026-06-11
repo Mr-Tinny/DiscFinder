@@ -8,6 +8,10 @@ const menuToggle = document.querySelector("#menuToggle");
 const menuToggleIcon = document.querySelector("#menuToggleIcon");
 const menuToggleText = document.querySelector("#menuToggleText");
 const sampleButton = document.querySelector("#sampleButton");
+const saveDiscButton = document.querySelector("#saveDiscButton");
+const discNameInput = document.querySelector("#discNameInput");
+const discList = document.querySelector("#discList");
+const libraryCount = document.querySelector("#libraryCount");
 const colorPicker = document.querySelector("#colorPicker");
 const colorWheel = document.querySelector("#colorWheel");
 const wheelCtx = colorWheel.getContext("2d", { willReadFrequently: true });
@@ -31,6 +35,7 @@ const signalDot = document.querySelector("#signalDot");
 const targetBox = document.querySelector("#targetBox");
 const screenFlash = document.querySelector("#screenFlash");
 const presets = [...document.querySelectorAll(".preset")];
+const libraryStorageKey = "discFinder.library.v1";
 
 const state = {
   running: false,
@@ -44,16 +49,21 @@ const state = {
   triggerCoverage: 0.015,
   lastAlertAt: 0,
   lastFrameAt: 0,
-  lastRawFrame: null
+  lastRawFrame: null,
+  library: []
 };
 
+loadDiscLibrary();
 syncControls();
 setTargetColor(colorPicker.value);
 drawColorWheel();
+renderDiscLibrary();
 
 startButton.addEventListener("click", startCamera);
 menuToggle.addEventListener("click", toggleControls);
 sampleButton.addEventListener("click", sampleCenterColor);
+saveDiscButton.addEventListener("click", saveCurrentDisc);
+discList.addEventListener("click", handleDiscListClick);
 colorPicker.addEventListener("input", () => setTargetColor(colorPicker.value));
 rangeSlider.addEventListener("input", syncControls);
 satSlider.addEventListener("input", syncControls);
@@ -77,6 +87,70 @@ function toggleControls() {
   menuToggle.setAttribute("aria-expanded", String(!collapsed));
   menuToggleIcon.textContent = collapsed ? "⌃" : "⌄";
   menuToggleText.textContent = collapsed ? "Show controls" : "Hide controls";
+}
+
+function saveCurrentDisc() {
+  const name = discNameInput.value.trim();
+
+  if (!name) {
+    discNameInput.focus();
+    setStatus("Name the disc first", false, 0);
+    return;
+  }
+
+  const disc = {
+    id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()),
+    name,
+    color: colorPicker.value,
+    hueTolerance: state.hueTolerance,
+    minSaturation: state.minSaturation,
+    minBrightness: state.minBrightness,
+    triggerCoverage: state.triggerCoverage,
+    savedAt: Date.now()
+  };
+
+  state.library = [
+    disc,
+    ...state.library.filter((item) => item.name.toLowerCase() !== name.toLowerCase())
+  ].slice(0, 20);
+
+  discNameInput.value = "";
+  persistDiscLibrary();
+  renderDiscLibrary();
+  setStatus(`Saved ${disc.name}`, false, 0);
+}
+
+function handleDiscListClick(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+
+  const disc = state.library.find((item) => item.id === button.dataset.id);
+  if (!disc) return;
+
+  if (button.dataset.action === "load") {
+    loadDisc(disc);
+  }
+
+  if (button.dataset.action === "delete") {
+    state.library = state.library.filter((item) => item.id !== disc.id);
+    persistDiscLibrary();
+    renderDiscLibrary();
+    setStatus(`Deleted ${disc.name}`, false, 0);
+  }
+}
+
+function loadDisc(disc) {
+  colorPicker.value = disc.color;
+  rangeSlider.value = Math.round(disc.hueTolerance);
+  satSlider.value = Math.round(disc.minSaturation * 100);
+  lightSlider.value = Math.round(disc.minBrightness * 100);
+  triggerSlider.value = Math.round(disc.triggerCoverage * 1000);
+
+  syncControls();
+  setTargetColor(disc.color);
+  discNameInput.value = disc.name;
+  sampleText.textContent = `Loaded ${disc.name}`;
+  setStatus(`Loaded ${disc.name}`, false, 0);
 }
 
 async function startCamera() {
@@ -315,6 +389,60 @@ function setStatus(text, detected, confidence) {
   signalDot.classList.toggle("detected", detected);
 }
 
+function loadDiscLibrary() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(libraryStorageKey) || "[]");
+    state.library = Array.isArray(saved) ? saved.filter(isValidDisc).slice(0, 20) : [];
+  } catch {
+    state.library = [];
+  }
+}
+
+function persistDiscLibrary() {
+  localStorage.setItem(libraryStorageKey, JSON.stringify(state.library));
+}
+
+function renderDiscLibrary() {
+  libraryCount.textContent = state.library.length === 1 ? "1 saved disc" : `${state.library.length} saved discs`;
+
+  if (state.library.length === 0) {
+    libraryCount.textContent = "No saved discs";
+    discList.innerHTML = `<div class="disc-empty">Saved discs will appear here.</div>`;
+    return;
+  }
+
+  discList.innerHTML = state.library.map((disc) => {
+    const hue = Math.round(rgbToHsvFromHex(disc.color).hue);
+    const range = Math.round(disc.hueTolerance);
+
+    return `
+      <div class="disc-item">
+        <span class="disc-swatch" style="background: ${disc.color}"></span>
+        <span class="disc-info">
+          <span class="disc-name">${escapeHtml(disc.name)}</span>
+          <span class="disc-meta">${hue}° ± ${range}°</span>
+        </span>
+        <button class="disc-action" type="button" data-action="load" data-id="${disc.id}">Load</button>
+        <button class="disc-action delete" type="button" data-action="delete" data-id="${disc.id}">Delete</button>
+      </div>
+    `;
+  }).join("");
+}
+
+function isValidDisc(disc) {
+  return (
+    disc &&
+    typeof disc.id === "string" &&
+    /^[a-z0-9.-]+$/i.test(disc.id) &&
+    typeof disc.name === "string" &&
+    /^#[0-9a-f]{6}$/i.test(disc.color) &&
+    Number.isFinite(disc.hueTolerance) &&
+    Number.isFinite(disc.minSaturation) &&
+    Number.isFinite(disc.minBrightness) &&
+    Number.isFinite(disc.triggerCoverage)
+  );
+}
+
 function hueDistance(a, b) {
   const delta = Math.abs(a - b) % 360;
   return Math.min(delta, 360 - delta);
@@ -354,6 +482,20 @@ function hexToRgb(hex) {
   };
 }
 
+function rgbToHsvFromHex(hex) {
+  const { red, green, blue } = hexToRgb(hex);
+  return rgbToHsv(red / 255, green / 255, blue / 255);
+}
+
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function sampleCenterColor() {
   if (!state.lastRawFrame) {
     setStatus("Start camera first", false, 0);
@@ -362,7 +504,7 @@ function sampleCenterColor() {
 
   const { width, height, data } = state.lastRawFrame;
   const centerX = Math.floor(width / 2);
-  const centerY = Math.floor(height * 0.45);
+  const centerY = Math.floor(height * getReticleYRatio());
   const radius = Math.max(4, Math.round(Math.min(width, height) * 0.035));
   let red = 0;
   let green = 0;
@@ -386,6 +528,10 @@ function sampleCenterColor() {
   colorPicker.value = hex;
   sampleText.textContent = `Sampled ${hex.toUpperCase()}`;
   setTargetColor(hex);
+}
+
+function getReticleYRatio() {
+  return appShell.classList.contains("controls-collapsed") ? 0.45 : 0.24;
 }
 
 function handleWheelPick(event) {
