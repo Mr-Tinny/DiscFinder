@@ -1,8 +1,12 @@
 const video = document.querySelector("#camera");
 const canvas = document.querySelector("#analysisCanvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
+const appShell = document.querySelector(".app-shell");
 const scanner = document.querySelector(".scanner");
 const startButton = document.querySelector("#startButton");
+const menuToggle = document.querySelector("#menuToggle");
+const menuToggleIcon = document.querySelector("#menuToggleIcon");
+const menuToggleText = document.querySelector("#menuToggleText");
 const sampleButton = document.querySelector("#sampleButton");
 const colorPicker = document.querySelector("#colorPicker");
 const colorWheel = document.querySelector("#colorWheel");
@@ -48,6 +52,7 @@ setTargetColor(colorPicker.value);
 drawColorWheel();
 
 startButton.addEventListener("click", startCamera);
+menuToggle.addEventListener("click", toggleControls);
 sampleButton.addEventListener("click", sampleCenterColor);
 colorPicker.addEventListener("input", () => setTargetColor(colorPicker.value));
 rangeSlider.addEventListener("input", syncControls);
@@ -66,6 +71,13 @@ presets.forEach((button) => {
     presets.forEach((preset) => preset.classList.toggle("active", preset === button));
   });
 });
+
+function toggleControls() {
+  const collapsed = appShell.classList.toggle("controls-collapsed");
+  menuToggle.setAttribute("aria-expanded", String(!collapsed));
+  menuToggleIcon.textContent = collapsed ? "⌃" : "⌄";
+  menuToggleText.textContent = collapsed ? "Show controls" : "Hide controls";
+}
 
 async function startCamera() {
   try {

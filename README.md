@@ -14,6 +14,7 @@ After opening it:
 2. Allow camera access.
 3. Pick a preset, use the full color wheel, or aim the reticle at the disc and tap `Sample Center`.
 4. Tune `Range`, `Sat`, `Light`, and `Trigger` in the field.
+5. Tap `Hide controls` to slide the menu down and scan with an unobstructed camera view.
 
 The first tap also unlocks browser audio, which is required before iPhone Safari will play the detection beep.
 
@@ -34,3 +35,4 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Increase `Trigger` if small flecks cause false alerts.
 - Decrease `Trigger` when the disc is mostly hidden.
 - Turn off `Grey view` if you want to compare against the unfiltered camera feed while tuning.
+- Use `Show controls` to bring the menu back up when lighting changes or you switch discs.
