@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101514">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="DiscFinder">
+    <title>DiscFinder Web</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="scanner" aria-label="Camera scanner">
+        <video id="camera" playsinline muted></video>
+        <canvas id="analysisCanvas" aria-label="Processed camera view"></canvas>
+        <div id="screenFlash" class="screen-flash" aria-hidden="true"></div>
+        <div id="targetBox" class="target-box" aria-hidden="true"></div>
+        <div class="reticle" aria-hidden="true"></div>
+
+        <div class="status-bar">
+          <div class="status-left">
+            <span id="signalDot" class="signal-dot"></span>
+            <span id="statusText">Ready</span>
+          </div>
+          <span id="confidenceText">0%</span>
+        </div>
+      </section>
+
+      <form class="control-panel" autocomplete="off">
+        <div class="top-controls">
+          <button id="startButton" class="primary-button" type="button">
+            <span class="button-icon">▶</span>
+            <span>Start Camera</span>
+          </button>
+
+          <label class="color-pick">
+            <span class="sr-only">Target disc color</span>
+            <input id="colorPicker" type="color" value="#ff1f92">
+          </label>
+        </div>
+
+        <div class="sample-row">
+          <button id="sampleButton" class="secondary-button" type="button">
+            <span class="button-icon">◎</span>
+            <span>Sample Center</span>
+          </button>
+
+          <div class="sample-readout" aria-live="polite">
+            <span id="sampleSwatch" class="sample-swatch"></span>
+            <span id="sampleText">Aim reticle at disc</span>
+          </div>
+        </div>
+
+        <div class="wheel-wrap">
+          <canvas id="colorWheel" width="220" height="220" aria-label="Full color wheel"></canvas>
+          <div class="wheel-copy">
+            <strong>Color wheel</strong>
+            <span id="rangeHint">Searching 312° to 348°</span>
+          </div>
+        </div>
+
+        <div class="preset-row" aria-label="Color presets">
+          <button class="preset active" type="button" data-color="#ff1f92" aria-label="Pink"></button>
+          <button class="preset" type="button" data-color="#ff7a00" aria-label="Orange"></button>
+          <button class="preset" type="button" data-color="#ffe600" aria-label="Yellow"></button>
+          <button class="preset" type="button" data-color="#0078ff" aria-label="Blue"></button>
+          <button class="preset" type="button" data-color="#9c3bff" aria-label="Purple"></button>
+          <button class="preset" type="button" data-color="#ff2525" aria-label="Red"></button>
+        </div>
+
+        <div class="sliders">
+          <label class="slider-row">
+            <span>Range</span>
+            <input id="rangeSlider" type="range" min="5" max="70" value="18">
+            <output id="rangeValue">18°</output>
+          </label>
+
+          <label class="slider-row">
+            <span>Sat</span>
+            <input id="satSlider" type="range" min="5" max="95" value="42">
+            <output id="satValue">42%</output>
+          </label>
+
+          <label class="slider-row">
+            <span>Light</span>
+            <input id="lightSlider" type="range" min="5" max="95" value="28">
+            <output id="lightValue">28%</output>
+          </label>
+
+          <label class="slider-row">
+            <span>Trigger</span>
+            <input id="triggerSlider" type="range" min="3" max="80" value="15">
+            <output id="triggerValue">1.5%</output>
+          </label>
+        </div>
+
+        <div class="audio-row">
+          <label class="toggle">
+            <input id="audioToggle" type="checkbox" checked>
+            <span>Audio alert</span>
+          </label>
+
+          <label class="toggle">
+            <input id="flashToggle" type="checkbox" checked>
+            <span>Flash</span>
+          </label>
+
+          <label class="toggle">
+            <input id="greyToggle" type="checkbox" checked>
+            <span>Grey view</span>
+          </label>
+        </div>
+      </form>
+    </main>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

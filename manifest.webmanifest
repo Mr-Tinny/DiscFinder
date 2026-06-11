@@ -1,0 +1,10 @@
+{
+  "name": "DiscFinder Web",
+  "short_name": "DiscFinder",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#101514",
+  "theme_color": "#101514",
+  "orientation": "portrait",
+  "icons": []
+}
