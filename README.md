@@ -39,7 +39,7 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Increase `Trigger` if small flecks cause false alerts.
 - Decrease `Trigger` when the disc is mostly hidden.
 - For white or grey discs, use the white/grey presets or `Sample Center`; the app switches to neutral brightness matching instead of hue matching.
-- Use camera zoom sparingly; higher zoom helps inspect brush but makes hand shake more obvious.
+- Use camera zoom sparingly; higher zoom helps inspect brush but makes hand shake more obvious. Zoom remains available above `Show controls` when the menu is hidden.
 - Use `View` to switch between grey isolation, boosted-color view, mask-only view, and the unfiltered color feed.
 - Use `Show controls` to bring the menu back up when lighting changes or you switch discs.
 - Saved discs are stored in the browser on that iPhone. Use `Load` to restore a disc's saved colors and detection settings.

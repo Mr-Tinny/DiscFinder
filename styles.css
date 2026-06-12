@@ -266,6 +266,23 @@ video {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.scanner-zoom {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: calc(var(--drawer-peek) + env(safe-area-inset-bottom) + 12px);
+  display: none;
+  transform: translateX(-50%);
+  background: rgba(2, 8, 7, 0.56);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.app-shell.controls-collapsed .scanner-zoom {
+  display: inline-flex;
+}
+
 .icon-button {
   width: 31px;
   height: 31px;

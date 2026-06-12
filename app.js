@@ -7,6 +7,9 @@ const startButton = document.querySelector("#startButton");
 const zoomOutButton = document.querySelector("#zoomOutButton");
 const zoomInButton = document.querySelector("#zoomInButton");
 const zoomValue = document.querySelector("#zoomValue");
+const scanZoomOutButton = document.querySelector("#scanZoomOutButton");
+const scanZoomInButton = document.querySelector("#scanZoomInButton");
+const scanZoomValue = document.querySelector("#scanZoomValue");
 const menuToggle = document.querySelector("#menuToggle");
 const menuToggleIcon = document.querySelector("#menuToggleIcon");
 const menuToggleText = document.querySelector("#menuToggleText");
@@ -71,6 +74,8 @@ renderDiscLibrary();
 startButton.addEventListener("click", startCamera);
 zoomOutButton.addEventListener("click", () => adjustZoom(-0.25));
 zoomInButton.addEventListener("click", () => adjustZoom(0.25));
+scanZoomOutButton.addEventListener("click", () => adjustZoom(-0.25));
+scanZoomInButton.addEventListener("click", () => adjustZoom(0.25));
 menuToggle.addEventListener("click", toggleControls);
 sampleButton.addEventListener("click", sampleCenterColor);
 saveDiscButton.addEventListener("click", saveCurrentDisc);
@@ -188,9 +193,15 @@ function adjustZoom(delta) {
 
 function setZoom(value) {
   state.zoom = Math.max(state.minZoom, Math.min(state.maxZoom, value));
-  zoomValue.textContent = `${state.zoom.toFixed(1)}×`;
-  zoomOutButton.disabled = state.zoom <= state.minZoom;
-  zoomInButton.disabled = state.zoom >= state.maxZoom;
+  const label = `${state.zoom.toFixed(1)}×`;
+  zoomValue.textContent = label;
+  scanZoomValue.textContent = label;
+  [zoomOutButton, scanZoomOutButton].forEach((button) => {
+    button.disabled = state.zoom <= state.minZoom;
+  });
+  [zoomInButton, scanZoomInButton].forEach((button) => {
+    button.disabled = state.zoom >= state.maxZoom;
+  });
 }
 
 async function startCamera() {
