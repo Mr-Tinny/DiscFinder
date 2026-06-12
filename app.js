@@ -659,7 +659,7 @@ function sampleCenterColor() {
   }
 
   const { width, height, data } = state.lastRawFrame;
-  const centerX = Math.floor(width / 2);
+  const centerX = Math.floor(width * getReticleXRatio());
   const centerY = Math.floor(height * getReticleYRatio());
   const radius = Math.max(4, Math.round(Math.min(width, height) * 0.035));
   let red = 0;
@@ -687,7 +687,22 @@ function sampleCenterColor() {
 }
 
 function getReticleYRatio() {
+  if (window.matchMedia("(orientation: landscape) and (max-height: 720px)").matches) {
+    return 0.5;
+  }
+
   return appShell.classList.contains("controls-collapsed") ? 0.45 : 0.24;
+}
+
+function getReticleXRatio() {
+  const isLandscape = window.matchMedia("(orientation: landscape) and (max-height: 720px)").matches;
+
+  if (!isLandscape || appShell.classList.contains("controls-collapsed")) {
+    return 0.5;
+  }
+
+  const panelWidth = Math.min(390, window.innerWidth * 0.42);
+  return ((window.innerWidth - panelWidth) / 2) / window.innerWidth;
 }
 
 function handleWheelPick(event) {

@@ -10,6 +10,8 @@ This project was built with help from Codex AI.
 
 iPhone Safari requires camera access from a secure origin. Host this folder on an HTTPS static host such as GitHub Pages, Netlify, Cloudflare Pages, or a small HTTPS server, then open the HTTPS URL on the iPhone.
 
+The app supports both portrait and landscape orientation. In landscape, the controls move to a side drawer so the camera view stays wide.
+
 After opening it:
 
 1. Tap `Start Camera`.

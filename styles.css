@@ -695,3 +695,94 @@ input[type="range"] {
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
   }
 }
+
+@media (orientation: landscape) and (max-height: 720px) {
+  :root {
+    --drawer-peek: 58px;
+    --reticle-y-open: 50%;
+    --reticle-y-collapsed: 50%;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .app-shell {
+    width: 100vw;
+    min-height: 100vh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .status-bar {
+    top: calc(env(safe-area-inset-top) + 10px);
+    left: calc(env(safe-area-inset-left) + 10px);
+    right: auto;
+    width: min(420px, calc(100vw - 24px));
+  }
+
+  .control-panel {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: min(390px, 42vw);
+    max-height: none;
+    padding:
+      calc(env(safe-area-inset-top) + 10px)
+      calc(env(safe-area-inset-right) + 10px)
+      calc(env(safe-area-inset-bottom) + 10px)
+      10px;
+    border-top: 0;
+    border-left: 1px solid var(--panel-border);
+    box-shadow: -22px 0 48px rgba(0, 0, 0, 0.28);
+    transform: translateX(0);
+  }
+
+  .app-shell.controls-collapsed .control-panel {
+    transform: translateX(calc(100% - var(--drawer-peek)));
+  }
+
+  .drawer-toggle {
+    min-height: 42px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+
+  .app-shell.controls-collapsed .scanner-zoom {
+    display: inline-flex;
+  }
+
+  .scanner-zoom {
+    left: auto;
+    right: calc(var(--drawer-peek) + env(safe-area-inset-right) + 12px);
+    bottom: calc(env(safe-area-inset-bottom) + 12px);
+    transform: none;
+  }
+
+  .reticle {
+    left: calc((100vw - min(390px, 42vw)) / 2);
+  }
+
+  .app-shell.controls-collapsed .reticle {
+    left: 50%;
+  }
+
+  .top-controls,
+  .sample-row {
+    flex-wrap: wrap;
+  }
+
+  .view-row {
+    grid-template-columns: 44px repeat(2, minmax(0, 1fr));
+  }
+
+  .disc-item {
+    grid-template-columns: minmax(28px, 54px) minmax(0, 1fr);
+  }
+
+  .disc-action {
+    min-height: 34px;
+  }
+}
