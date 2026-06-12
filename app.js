@@ -27,6 +27,8 @@ const lightSlider = document.querySelector("#lightSlider");
 const triggerSlider = document.querySelector("#triggerSlider");
 const audioToggle = document.querySelector("#audioToggle");
 const flashToggle = document.querySelector("#flashToggle");
+const blobFilterToggle = document.querySelector("#blobFilterToggle");
+const foliageToggle = document.querySelector("#foliageToggle");
 const viewModeInputs = [...document.querySelectorAll("input[name='viewMode']")];
 const rangeValue = document.querySelector("#rangeValue");
 const satValue = document.querySelector("#satValue");
@@ -40,6 +42,18 @@ const confidenceText = document.querySelector("#confidenceText");
 const signalDot = document.querySelector("#signalDot");
 const targetBox = document.querySelector("#targetBox");
 const screenFlash = document.querySelector("#screenFlash");
+const hudColorSwatch = document.querySelector("#hudColorSwatch");
+const hudTargetText = document.querySelector("#hudTargetText");
+const hudConfidenceText = document.querySelector("#hudConfidenceText");
+const hudMeterFill = document.querySelector("#hudMeterFill");
+const hudDetailText = document.querySelector("#hudDetailText");
+const discEditPanel = document.querySelector("#discEditPanel");
+const editDiscTitle = document.querySelector("#editDiscTitle");
+const editColorList = document.querySelector("#editColorList");
+const addColorButton = document.querySelector("#addColorButton");
+const replaceColorButton = document.querySelector("#replaceColorButton");
+const removeColorButton = document.querySelector("#removeColorButton");
+const cancelEditButton = document.querySelector("#cancelEditButton");
 const presets = [...document.querySelectorAll(".preset")];
 const libraryStorageKey = "discFinder.library.v1";
 
@@ -61,7 +75,9 @@ const state = {
   lastAlertAt: 0,
   lastFrameAt: 0,
   lastRawFrame: null,
-  library: []
+  library: [],
+  editingDiscId: null,
+  editingColorIndex: 0
 };
 
 loadDiscLibrary();
@@ -80,6 +96,11 @@ menuToggle.addEventListener("click", toggleControls);
 sampleButton.addEventListener("click", sampleCenterColor);
 saveDiscButton.addEventListener("click", saveCurrentDisc);
 discList.addEventListener("click", handleDiscListClick);
+editColorList.addEventListener("click", handleEditColorClick);
+addColorButton.addEventListener("click", addCurrentColorToEditingDisc);
+replaceColorButton.addEventListener("click", replaceSelectedDiscColor);
+removeColorButton.addEventListener("click", removeSelectedDiscColor);
+cancelEditButton.addEventListener("click", stopEditingDisc);
 colorPicker.addEventListener("input", () => setTargetColor(colorPicker.value));
 rangeSlider.addEventListener("input", syncControls);
 satSlider.addEventListener("input", syncControls);
@@ -147,9 +168,14 @@ function saveCurrentDisc() {
     ...state.library.filter((item) => item.id !== disc.id)
   ].slice(0, 20);
 
+  if (state.editingDiscId === disc.id) {
+    state.editingColorIndex = 0;
+  }
+
   discNameInput.value = "";
   persistDiscLibrary();
   renderDiscLibrary();
+  renderEditPanel();
   setStatus(`Saved ${disc.name}`, false, 0);
 }
 
@@ -164,8 +190,15 @@ function handleDiscListClick(event) {
     loadDisc(disc);
   }
 
+  if (button.dataset.action === "edit") {
+    startEditingDisc(disc);
+  }
+
   if (button.dataset.action === "delete") {
     state.library = state.library.filter((item) => item.id !== disc.id);
+    if (state.editingDiscId === disc.id) {
+      stopEditingDisc({ silent: true });
+    }
     persistDiscLibrary();
     renderDiscLibrary();
     setStatus(`Deleted ${disc.name}`, false, 0);
@@ -185,6 +218,134 @@ function loadDisc(disc) {
   discNameInput.value = disc.name;
   sampleText.textContent = colors.length > 1 ? `Loaded ${colors.length} colors` : `Loaded ${disc.name}`;
   setStatus(`Loaded ${disc.name}`, false, 0);
+}
+
+function startEditingDisc(disc) {
+  state.editingDiscId = disc.id;
+  state.editingColorIndex = 0;
+  loadDisc(disc);
+  renderEditPanel();
+  setStatus(`Editing ${disc.name}`, false, 0);
+}
+
+function stopEditingDisc(options = {}) {
+  state.editingDiscId = null;
+  state.editingColorIndex = 0;
+  discEditPanel.hidden = true;
+  saveDiscButton.textContent = "Save Color";
+
+  if (!options.silent) {
+    setStatus("Finished editing", false, 0);
+  }
+}
+
+function getEditingDisc() {
+  return state.library.find((disc) => disc.id === state.editingDiscId) || null;
+}
+
+function renderEditPanel() {
+  const disc = getEditingDisc();
+
+  if (!disc) {
+    discEditPanel.hidden = true;
+    saveDiscButton.textContent = "Save Color";
+    return;
+  }
+
+  const colors = getDiscColors(disc);
+  state.editingColorIndex = Math.min(state.editingColorIndex, Math.max(colors.length - 1, 0));
+  discEditPanel.hidden = false;
+  saveDiscButton.textContent = "Save New Disc";
+  editDiscTitle.textContent = `Editing ${disc.name}`;
+  removeColorButton.disabled = colors.length <= 1;
+  editColorList.innerHTML = colors.map((color, index) => `
+    <button
+      class="edit-color-button${index === state.editingColorIndex ? " active" : ""}"
+      type="button"
+      data-index="${index}"
+      aria-label="Edit saved color ${index + 1}"
+      style="--edit-color: ${color}"
+    ></button>
+  `).join("");
+}
+
+function handleEditColorClick(event) {
+  const button = event.target.closest("button[data-index]");
+  if (!button) return;
+
+  const disc = getEditingDisc();
+  if (!disc) return;
+
+  const colors = getDiscColors(disc);
+  state.editingColorIndex = Number(button.dataset.index);
+  const selectedColor = colors[state.editingColorIndex];
+
+  if (selectedColor) {
+    colorPicker.value = selectedColor;
+    setTargetColor(selectedColor, { activeColors: colors });
+    sampleText.textContent = `Editing color ${state.editingColorIndex + 1}`;
+  }
+
+  renderEditPanel();
+}
+
+function addCurrentColorToEditingDisc() {
+  updateEditingDisc((disc, colors) => {
+    const nextColors = uniqueColors([colorPicker.value, ...colors]).slice(0, 6);
+    state.editingColorIndex = 0;
+    return { ...disc, colors: nextColors, color: nextColors[0] };
+  }, "Added color");
+}
+
+function replaceSelectedDiscColor() {
+  updateEditingDisc((disc, colors) => {
+    colors[state.editingColorIndex] = colorPicker.value;
+    const nextColors = uniqueColors(colors).slice(0, 6);
+    state.editingColorIndex = Math.min(state.editingColorIndex, nextColors.length - 1);
+    return { ...disc, colors: nextColors, color: nextColors[0] };
+  }, "Replaced color");
+}
+
+function removeSelectedDiscColor() {
+  const disc = getEditingDisc();
+  const colors = disc ? getDiscColors(disc) : [];
+
+  if (colors.length <= 1) {
+    setStatus("Replace the only color instead", false, 0);
+    return;
+  }
+
+  updateEditingDisc((currentDisc, currentColors) => {
+    const nextColors = currentColors.filter((_, index) => index !== state.editingColorIndex);
+    state.editingColorIndex = Math.min(state.editingColorIndex, nextColors.length - 1);
+    return { ...currentDisc, colors: nextColors, color: nextColors[0] };
+  }, "Removed color");
+}
+
+function updateEditingDisc(updater, message) {
+  const disc = getEditingDisc();
+  if (!disc) return;
+
+  const updated = {
+    ...updater({ ...disc, name: discNameInput.value.trim() || disc.name }, getDiscColors(disc)),
+    name: discNameInput.value.trim() || disc.name,
+    hueTolerance: state.hueTolerance,
+    minSaturation: state.minSaturation,
+    minBrightness: state.minBrightness,
+    triggerCoverage: state.triggerCoverage,
+    savedAt: Date.now()
+  };
+
+  state.library = [
+    updated,
+    ...state.library.filter((item) => item.id !== updated.id)
+  ];
+
+  persistDiscLibrary();
+  renderDiscLibrary();
+  renderEditPanel();
+  loadDisc(updated);
+  setStatus(message, false, 0);
 }
 
 function adjustZoom(delta) {
@@ -282,34 +443,29 @@ function analyzeFrame(time) {
 
 function detectAndFilterColor(image, width, height) {
   const data = image.data;
-  let sampled = 0;
-  let matched = 0;
-  let minX = width;
-  let minY = height;
-  let maxX = 0;
-  let maxY = 0;
+  const sampled = width * height;
+  const matchMask = new Uint8Array(sampled);
+  let rawMatched = 0;
 
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      sampled += 1;
-      const offset = (y * width + x) * 4;
-      const red = data[offset] / 255;
-      const green = data[offset + 1] / 255;
-      const blue = data[offset + 2] / 255;
-      const matchedPixel = matchesTarget(red, green, blue);
+  for (let index = 0; index < sampled; index += 1) {
+    const offset = index * 4;
+    const red = data[offset] / 255;
+    const green = data[offset + 1] / 255;
+    const blue = data[offset + 2] / 255;
 
-      if (matchedPixel) {
-        matched += 1;
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-
-      renderPixelByMode(data, offset, matchedPixel);
+    if (matchesTarget(red, green, blue)) {
+      matchMask[index] = 1;
+      rawMatched += 1;
     }
   }
 
+  const blobResult = blobFilterToggle.checked
+    ? filterMatchBlobs(matchMask, width, height)
+    : summarizeMatchMask(matchMask, width, height);
+
+  renderFrameByMode(data, matchMask, width, height);
+
+  const matched = blobResult.matched;
   const coverage = sampled > 0 ? matched / sampled : 0;
   const detected = coverage >= state.triggerCoverage;
   const confidence = Math.min(1, coverage / Math.max(state.triggerCoverage, 0.0001));
@@ -318,13 +474,137 @@ function detectAndFilterColor(image, width, height) {
     detected,
     coverage,
     confidence,
+    matched,
+    rawMatched,
+    filteredMatched: Math.max(0, rawMatched - matched),
+    blobCount: blobResult.blobCount,
     box: matched > 0 ? {
-      x: minX / width,
-      y: minY / height,
-      width: Math.max(maxX - minX, 1) / width,
-      height: Math.max(maxY - minY, 1) / height
+      x: blobResult.minX / width,
+      y: blobResult.minY / height,
+      width: Math.max(blobResult.maxX - blobResult.minX, 1) / width,
+      height: Math.max(blobResult.maxY - blobResult.minY, 1) / height
     } : null
   };
+}
+
+function filterMatchBlobs(mask, width, height) {
+  const total = width * height;
+  const visited = new Uint8Array(total);
+  const stack = new Int32Array(total);
+  const component = [];
+  const minimumBlobPixels = getMinimumBlobPixels(width, height);
+  let matched = 0;
+  let blobCount = 0;
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let start = 0; start < total; start += 1) {
+    if (!mask[start] || visited[start]) continue;
+
+    let stackLength = 0;
+    let componentLength = 0;
+    let localMinX = width;
+    let localMinY = height;
+    let localMaxX = 0;
+    let localMaxY = 0;
+    stack[stackLength] = start;
+    stackLength += 1;
+    visited[start] = 1;
+    component.length = 0;
+
+    while (stackLength > 0) {
+      stackLength -= 1;
+      const index = stack[stackLength];
+      const x = index % width;
+      const y = Math.floor(index / width);
+      component[componentLength] = index;
+      componentLength += 1;
+      localMinX = Math.min(localMinX, x);
+      localMinY = Math.min(localMinY, y);
+      localMaxX = Math.max(localMaxX, x);
+      localMaxY = Math.max(localMaxY, y);
+
+      const left = index - 1;
+      const right = index + 1;
+      const up = index - width;
+      const down = index + width;
+
+      if (x > 0 && mask[left] && !visited[left]) {
+        visited[left] = 1;
+        stack[stackLength] = left;
+        stackLength += 1;
+      }
+
+      if (x < width - 1 && mask[right] && !visited[right]) {
+        visited[right] = 1;
+        stack[stackLength] = right;
+        stackLength += 1;
+      }
+
+      if (y > 0 && mask[up] && !visited[up]) {
+        visited[up] = 1;
+        stack[stackLength] = up;
+        stackLength += 1;
+      }
+
+      if (y < height - 1 && mask[down] && !visited[down]) {
+        visited[down] = 1;
+        stack[stackLength] = down;
+        stackLength += 1;
+      }
+    }
+
+    if (componentLength < minimumBlobPixels) {
+      for (let index = 0; index < componentLength; index += 1) {
+        mask[component[index]] = 0;
+      }
+      continue;
+    }
+
+    blobCount += 1;
+    matched += componentLength;
+    minX = Math.min(minX, localMinX);
+    minY = Math.min(minY, localMinY);
+    maxX = Math.max(maxX, localMaxX);
+    maxY = Math.max(maxY, localMaxY);
+  }
+
+  return { matched, blobCount, minX, minY, maxX, maxY };
+}
+
+function summarizeMatchMask(mask, width, height) {
+  let matched = 0;
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!mask[index]) continue;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    matched += 1;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  return {
+    matched,
+    blobCount: matched > 0 ? 1 : 0,
+    minX,
+    minY,
+    maxX,
+    maxY
+  };
+}
+
+function getMinimumBlobPixels(width, height) {
+  const framePixels = width * height;
+  return Math.max(4, Math.min(18, Math.round(framePixels * 0.000035)));
 }
 
 function matchesTarget(red, green, blue) {
@@ -334,6 +614,10 @@ function matchesTarget(red, green, blue) {
 }
 
 function matchesTargetColor(hsv, target) {
+  if (foliageToggle.checked && isLikelyFoliage(hsv, target)) {
+    return false;
+  }
+
   if (isNeutralTarget(target)) {
     const brightnessTolerance = 0.06 + state.hueTolerance / 300;
     const saturationCeiling = Math.max(0.22, state.minSaturation * 0.65);
@@ -351,13 +635,38 @@ function matchesTargetColor(hsv, target) {
   );
 }
 
-function renderPixelByMode(data, offset, matchedPixel) {
+function isLikelyFoliage(hsv, target) {
+  const targetIsGreen = target.saturation > 0.24 && hueDistance(target.hue, 118) < 52;
+  const pixelIsFoliage = hsv.hue >= 62 && hsv.hue <= 168 && hsv.saturation >= 0.2 && hsv.value >= 0.12;
+  return pixelIsFoliage && !targetIsGreen;
+}
+
+function renderFrameByMode(data, mask, width, height) {
   if (state.viewMode === "color") return;
 
+  for (let index = 0; index < mask.length; index += 1) {
+    const offset = index * 4;
+    renderPixelByMode(data, offset, Boolean(mask[index]));
+  }
+
+  if (state.viewMode === "outline") {
+    renderOutline(data, mask, width, height);
+  }
+}
+
+function renderPixelByMode(data, offset, matchedPixel) {
   if (state.viewMode === "mask") {
     data[offset] = matchedPixel ? 255 : 0;
     data[offset + 1] = matchedPixel ? 255 : 0;
     data[offset + 2] = matchedPixel ? 255 : 0;
+    return;
+  }
+
+  if (state.viewMode === "outline") {
+    const grey = Math.round(data[offset] * 0.2126 + data[offset + 1] * 0.7152 + data[offset + 2] * 0.0722);
+    data[offset] = Math.round(grey * 0.54);
+    data[offset + 1] = Math.round(grey * 0.54);
+    data[offset + 2] = Math.round(grey * 0.54);
     return;
   }
 
@@ -376,8 +685,37 @@ function renderPixelByMode(data, offset, matchedPixel) {
   }
 }
 
+function renderOutline(data, mask, width, height) {
+  const { red, green, blue } = state.activeTargets[0]?.rgb || hexToRgb(colorPicker.value);
+
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!mask[index]) continue;
+
+    const x = index % width;
+    const y = Math.floor(index / width);
+    const edge = (
+      x === 0 ||
+      y === 0 ||
+      x === width - 1 ||
+      y === height - 1 ||
+      !mask[index - 1] ||
+      !mask[index + 1] ||
+      !mask[index - width] ||
+      !mask[index + width]
+    );
+
+    if (!edge) continue;
+
+    const offset = index * 4;
+    data[offset] = red;
+    data[offset + 1] = green;
+    data[offset + 2] = blue;
+  }
+}
+
 function renderResult(result) {
   setStatus(result.detected ? "Color detected" : "Scanning", result.detected, result.confidence);
+  updateScanHud(result);
 
   if (result.box && result.detected) {
     targetBox.style.display = "block";
@@ -471,8 +809,10 @@ function setTargetColor(hex, options = {}) {
   targetBox.style.boxShadow = `0 0 0 9999px rgba(255, 255, 255, 0.02), 0 0 26px rgba(${red}, ${green}, ${blue}, 0.55)`;
   screenFlash.style.background = `rgba(${red}, ${green}, ${blue}, 0.28)`;
   sampleSwatch.style.background = hex;
+  hudColorSwatch.style.background = hex;
   presets.forEach((preset) => preset.classList.toggle("active", preset.dataset.color.toLowerCase() === hex.toLowerCase()));
   updateRangeHint();
+  updateScanHud();
   drawColorWheel();
 }
 
@@ -498,6 +838,24 @@ function setStatus(text, detected, confidence) {
   statusText.textContent = text;
   confidenceText.textContent = `${Math.round(confidence * 100)}%`;
   signalDot.classList.toggle("detected", detected);
+}
+
+function updateScanHud(result = null) {
+  const confidence = result ? result.confidence : 0;
+  const activeCount = state.activeTargets.length;
+  hudTargetText.textContent = activeCount > 1 ? `${activeCount} saved colors` : colorPicker.value.toUpperCase();
+  hudConfidenceText.textContent = `${Math.round(confidence * 100)}%`;
+  hudMeterFill.style.width = `${Math.round(confidence * 100)}%`;
+
+  if (!result) {
+    hudDetailText.textContent = "Scanning for selected color";
+    return;
+  }
+
+  const coverage = (result.coverage * 100).toFixed(result.coverage >= 0.01 ? 1 : 2);
+  const filtered = result.filteredMatched > 0 ? `, ${result.filteredMatched} specks ignored` : "";
+  const blobs = result.blobCount === 1 ? "1 blob" : `${result.blobCount} blobs`;
+  hudDetailText.textContent = `${coverage}% frame, ${blobs}${filtered}`;
 }
 
 function loadDiscLibrary() {
@@ -539,6 +897,7 @@ function renderDiscLibrary() {
           <span class="disc-meta">${colors.length > 1 ? `${colors.length} colors` : colorSearchLabel(colors[0], disc.hueTolerance)}</span>
         </span>
         <button class="disc-action" type="button" data-action="load" data-id="${disc.id}">Load</button>
+        <button class="disc-action" type="button" data-action="edit" data-id="${disc.id}">Edit</button>
         <button class="disc-action delete" type="button" data-action="delete" data-id="${disc.id}">Delete</button>
       </div>
     `;

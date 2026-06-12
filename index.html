@@ -32,6 +32,18 @@
           <span id="scanZoomValue" class="zoom-value">1.0×</span>
           <button id="scanZoomInButton" class="icon-button" type="button" aria-label="Zoom in">+</button>
         </div>
+
+        <div class="scan-hud" aria-live="polite">
+          <div class="scan-hud-top">
+            <span id="hudColorSwatch" class="hud-swatch"></span>
+            <span id="hudTargetText">Target color</span>
+            <strong id="hudConfidenceText">0%</strong>
+          </div>
+          <div class="hud-meter" aria-hidden="true">
+            <span id="hudMeterFill"></span>
+          </div>
+          <span id="hudDetailText">Scanning for selected color</span>
+        </div>
       </section>
 
       <form class="control-panel" autocomplete="off">
@@ -83,6 +95,19 @@
             <span class="sr-only">Disc name</span>
             <input id="discNameInput" type="text" maxlength="32" placeholder="Name this disc">
           </label>
+
+          <div id="discEditPanel" class="disc-edit-panel" hidden>
+            <div class="edit-heading">
+              <strong id="editDiscTitle">Editing disc</strong>
+              <button id="cancelEditButton" class="disc-action" type="button">Done</button>
+            </div>
+            <div id="editColorList" class="edit-color-list" aria-label="Saved colors for selected disc"></div>
+            <div class="edit-actions">
+              <button id="addColorButton" class="disc-action" type="button">Add Current</button>
+              <button id="replaceColorButton" class="disc-action" type="button">Replace Selected</button>
+              <button id="removeColorButton" class="disc-action delete" type="button">Remove Selected</button>
+            </div>
+          </div>
 
           <div id="discList" class="disc-list" aria-live="polite"></div>
         </section>
@@ -137,10 +162,21 @@
           <label><input type="radio" name="viewMode" value="grey" checked> Grey</label>
           <label><input type="radio" name="viewMode" value="boost"> Boost</label>
           <label><input type="radio" name="viewMode" value="mask"> Mask</label>
+          <label><input type="radio" name="viewMode" value="outline"> Edge</label>
           <label><input type="radio" name="viewMode" value="color"> Color</label>
         </div>
 
         <div class="audio-row">
+          <label class="toggle">
+            <input id="blobFilterToggle" type="checkbox" checked>
+            <span>Blob filter</span>
+          </label>
+
+          <label class="toggle">
+            <input id="foliageToggle" type="checkbox" checked>
+            <span>Suppress green</span>
+          </label>
+
           <label class="toggle">
             <input id="audioToggle" type="checkbox" checked>
             <span>Audio alert</span>

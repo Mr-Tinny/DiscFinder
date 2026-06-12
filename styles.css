@@ -193,6 +193,80 @@ video {
   opacity: 0.22;
 }
 
+.scan-hud {
+  position: absolute;
+  z-index: 4;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--drawer-peek) + env(safe-area-inset-bottom) + 12px);
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(2, 8, 7, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.app-shell.controls-collapsed .scan-hud {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.scan-hud-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.hud-swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: var(--target);
+}
+
+#hudTargetText,
+#hudDetailText {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#hudConfidenceText {
+  color: var(--text);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-meter {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hud-meter span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--target);
+  transition: width 140ms linear;
+}
+
 .control-panel {
   position: absolute;
   z-index: 5;
@@ -270,7 +344,7 @@ video {
   position: absolute;
   z-index: 6;
   left: 50%;
-  bottom: calc(var(--drawer-peek) + env(safe-area-inset-bottom) + 12px);
+  bottom: calc(var(--drawer-peek) + env(safe-area-inset-bottom) + 96px);
   display: none;
   transform: translateX(-50%);
   background: rgba(2, 8, 7, 0.56);
@@ -447,6 +521,62 @@ input[type="color"] {
   gap: 8px;
 }
 
+.disc-edit-panel {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.disc-edit-panel[hidden] {
+  display: none;
+}
+
+.edit-heading,
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-heading {
+  justify-content: space-between;
+}
+
+.edit-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-actions {
+  flex-wrap: wrap;
+}
+
+.edit-color-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.edit-color-button {
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(255, 255, 255, 0.26);
+  border-radius: 999px;
+  background: var(--edit-color);
+  cursor: pointer;
+}
+
+.edit-color-button.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(66, 230, 142, 0.55);
+}
+
 .disc-empty {
   color: var(--muted);
   font-size: 13px;
@@ -455,7 +585,7 @@ input[type="color"] {
 
 .disc-item {
   display: grid;
-  grid-template-columns: minmax(28px, 64px) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(28px, 58px) minmax(0, 1fr) repeat(3, auto);
   align-items: center;
   gap: 8px;
   padding: 8px;
@@ -517,6 +647,11 @@ input[type="color"] {
 
 .disc-action.delete {
   color: #ffd1d1;
+}
+
+.disc-action:disabled {
+  cursor: default;
+  opacity: 0.44;
 }
 
 .wheel-wrap {
@@ -607,7 +742,7 @@ input[type="range"] {
 
 .view-row {
   display: grid;
-  grid-template-columns: 44px repeat(4, minmax(0, 1fr));
+  grid-template-columns: 44px repeat(5, minmax(0, 1fr));
   align-items: center;
   gap: 7px;
 }
@@ -755,10 +890,17 @@ input[type="range"] {
   }
 
   .scanner-zoom {
-    left: auto;
-    right: calc(var(--drawer-peek) + env(safe-area-inset-right) + 12px);
-    bottom: calc(env(safe-area-inset-bottom) + 12px);
+    left: calc(env(safe-area-inset-left) + 10px);
+    right: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 98px);
     transform: none;
+  }
+
+  .scan-hud {
+    left: calc(env(safe-area-inset-left) + 10px);
+    right: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 12px);
+    width: min(360px, calc(100vw - var(--drawer-peek) - 34px));
   }
 
   .reticle {
@@ -775,7 +917,7 @@ input[type="range"] {
   }
 
   .view-row {
-    grid-template-columns: 44px repeat(2, minmax(0, 1fr));
+    grid-template-columns: 44px repeat(3, minmax(0, 1fr));
   }
 
   .disc-item {
