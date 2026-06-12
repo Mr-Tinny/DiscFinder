@@ -4,6 +4,8 @@ DiscFinder Web is a no-build browser version of the disc color finder. It uses t
 
 The live view keeps the selected color range in color and turns everything else grayscale, which makes a target disc stand out more clearly in brush.
 
+This project was built with help from Codex AI.
+
 ## Running on iPhone
 
 iPhone Safari requires camera access from a secure origin. Host this folder on an HTTPS static host such as GitHub Pages, Netlify, Cloudflare Pages, or a small HTTPS server, then open the HTTPS URL on the iPhone.
