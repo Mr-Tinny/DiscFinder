@@ -4,6 +4,9 @@ const ctx = canvas.getContext("2d", { willReadFrequently: true });
 const appShell = document.querySelector(".app-shell");
 const scanner = document.querySelector(".scanner");
 const startButton = document.querySelector("#startButton");
+const zoomOutButton = document.querySelector("#zoomOutButton");
+const zoomInButton = document.querySelector("#zoomInButton");
+const zoomValue = document.querySelector("#zoomValue");
 const menuToggle = document.querySelector("#menuToggle");
 const menuToggleIcon = document.querySelector("#menuToggleIcon");
 const menuToggleText = document.querySelector("#menuToggleText");
@@ -21,7 +24,7 @@ const lightSlider = document.querySelector("#lightSlider");
 const triggerSlider = document.querySelector("#triggerSlider");
 const audioToggle = document.querySelector("#audioToggle");
 const flashToggle = document.querySelector("#flashToggle");
-const greyToggle = document.querySelector("#greyToggle");
+const viewModeInputs = [...document.querySelectorAll("input[name='viewMode']")];
 const rangeValue = document.querySelector("#rangeValue");
 const satValue = document.querySelector("#satValue");
 const lightValue = document.querySelector("#lightValue");
@@ -47,6 +50,11 @@ const state = {
   minSaturation: 0.42,
   minBrightness: 0.28,
   triggerCoverage: 0.015,
+  activeTargets: [],
+  viewMode: "grey",
+  zoom: 1,
+  minZoom: 1,
+  maxZoom: 4,
   lastAlertAt: 0,
   lastFrameAt: 0,
   lastRawFrame: null,
@@ -54,12 +62,15 @@ const state = {
 };
 
 loadDiscLibrary();
+setZoom(state.zoom);
 syncControls();
 setTargetColor(colorPicker.value);
 drawColorWheel();
 renderDiscLibrary();
 
 startButton.addEventListener("click", startCamera);
+zoomOutButton.addEventListener("click", () => adjustZoom(-0.25));
+zoomInButton.addEventListener("click", () => adjustZoom(0.25));
 menuToggle.addEventListener("click", toggleControls);
 sampleButton.addEventListener("click", sampleCenterColor);
 saveDiscButton.addEventListener("click", saveCurrentDisc);
@@ -69,6 +80,11 @@ rangeSlider.addEventListener("input", syncControls);
 satSlider.addEventListener("input", syncControls);
 lightSlider.addEventListener("input", syncControls);
 triggerSlider.addEventListener("input", syncControls);
+viewModeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (input.checked) state.viewMode = input.value;
+  });
+});
 colorWheel.addEventListener("pointerdown", handleWheelPick);
 colorWheel.addEventListener("pointermove", (event) => {
   if (event.buttons === 1) handleWheelPick(event);
@@ -98,10 +114,22 @@ function saveCurrentDisc() {
     return;
   }
 
-  const disc = {
+  const existing = state.library.find((item) => item.name.toLowerCase() === name.toLowerCase());
+  const nextColor = colorPicker.value;
+  const disc = existing ? {
+    ...existing,
+    colors: uniqueColors([nextColor, ...getDiscColors(existing)]).slice(0, 6),
+    color: nextColor,
+    hueTolerance: state.hueTolerance,
+    minSaturation: state.minSaturation,
+    minBrightness: state.minBrightness,
+    triggerCoverage: state.triggerCoverage,
+    savedAt: Date.now()
+  } : {
     id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()),
     name,
-    color: colorPicker.value,
+    colors: [nextColor],
+    color: nextColor,
     hueTolerance: state.hueTolerance,
     minSaturation: state.minSaturation,
     minBrightness: state.minBrightness,
@@ -111,7 +139,7 @@ function saveCurrentDisc() {
 
   state.library = [
     disc,
-    ...state.library.filter((item) => item.name.toLowerCase() !== name.toLowerCase())
+    ...state.library.filter((item) => item.id !== disc.id)
   ].slice(0, 20);
 
   discNameInput.value = "";
@@ -140,17 +168,29 @@ function handleDiscListClick(event) {
 }
 
 function loadDisc(disc) {
-  colorPicker.value = disc.color;
+  const colors = getDiscColors(disc);
+  colorPicker.value = colors[0];
   rangeSlider.value = Math.round(disc.hueTolerance);
   satSlider.value = Math.round(disc.minSaturation * 100);
   lightSlider.value = Math.round(disc.minBrightness * 100);
   triggerSlider.value = Math.round(disc.triggerCoverage * 1000);
 
   syncControls();
-  setTargetColor(disc.color);
+  setTargetColor(colors[0], { activeColors: colors });
   discNameInput.value = disc.name;
-  sampleText.textContent = `Loaded ${disc.name}`;
+  sampleText.textContent = colors.length > 1 ? `Loaded ${colors.length} colors` : `Loaded ${disc.name}`;
   setStatus(`Loaded ${disc.name}`, false, 0);
+}
+
+function adjustZoom(delta) {
+  setZoom(state.zoom + delta);
+}
+
+function setZoom(value) {
+  state.zoom = Math.max(state.minZoom, Math.min(state.maxZoom, value));
+  zoomValue.textContent = `${state.zoom.toFixed(1)}×`;
+  zoomOutButton.disabled = state.zoom <= state.minZoom;
+  zoomInButton.disabled = state.zoom >= state.maxZoom;
 }
 
 async function startCamera() {
@@ -169,7 +209,8 @@ async function startCamera() {
       video: {
         facingMode: { ideal: "environment" },
         width: { ideal: 1280 },
-        height: { ideal: 720 }
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 60 }
       }
     });
 
@@ -193,7 +234,7 @@ async function startCamera() {
 function analyzeFrame(time) {
   if (!state.running) return;
 
-  if (time - state.lastFrameAt < 95) {
+  if (time - state.lastFrameAt < 48) {
     requestAnimationFrame(analyzeFrame);
     return;
   }
@@ -252,12 +293,9 @@ function detectAndFilterColor(image, width, height) {
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
-      } else if (greyToggle.checked) {
-        const grey = Math.round(data[offset] * 0.2126 + data[offset + 1] * 0.7152 + data[offset + 2] * 0.0722);
-        data[offset] = grey;
-        data[offset + 1] = grey;
-        data[offset + 2] = grey;
       }
+
+      renderPixelByMode(data, offset, matchedPixel);
     }
   }
 
@@ -281,11 +319,50 @@ function detectAndFilterColor(image, width, height) {
 function matchesTarget(red, green, blue) {
   const hsv = rgbToHsv(red, green, blue);
 
+  return state.activeTargets.some((target) => matchesTargetColor(hsv, target));
+}
+
+function matchesTargetColor(hsv, target) {
+  if (isNeutralTarget(target)) {
+    const brightnessTolerance = 0.06 + state.hueTolerance / 300;
+    const saturationCeiling = Math.max(0.22, state.minSaturation * 0.65);
+
+    return (
+      hsv.saturation <= saturationCeiling &&
+      Math.abs(hsv.value - target.value) <= brightnessTolerance
+    );
+  }
+
   return (
     hsv.saturation >= state.minSaturation &&
     hsv.value >= state.minBrightness &&
-    hueDistance(hsv.hue, state.targetHue) <= state.hueTolerance
+    hueDistance(hsv.hue, target.hue) <= state.hueTolerance
   );
+}
+
+function renderPixelByMode(data, offset, matchedPixel) {
+  if (state.viewMode === "color") return;
+
+  if (state.viewMode === "mask") {
+    data[offset] = matchedPixel ? 255 : 0;
+    data[offset + 1] = matchedPixel ? 255 : 0;
+    data[offset + 2] = matchedPixel ? 255 : 0;
+    return;
+  }
+
+  if (matchedPixel && state.viewMode === "boost") {
+    data[offset] = Math.min(255, Math.round(data[offset] * 1.28 + 20));
+    data[offset + 1] = Math.min(255, Math.round(data[offset + 1] * 1.28 + 20));
+    data[offset + 2] = Math.min(255, Math.round(data[offset + 2] * 1.28 + 20));
+    return;
+  }
+
+  if (!matchedPixel && (state.viewMode === "grey" || state.viewMode === "boost")) {
+    const grey = Math.round(data[offset] * 0.2126 + data[offset + 1] * 0.7152 + data[offset + 2] * 0.0722);
+    data[offset] = grey;
+    data[offset + 1] = grey;
+    data[offset + 2] = grey;
+  }
 }
 
 function renderResult(result) {
@@ -308,8 +385,9 @@ function renderResult(result) {
 
 function alertIfNeeded(confidence) {
   const now = performance.now();
+  const cooldown = confidence > 0.78 ? 620 : confidence > 0.42 ? 820 : 1100;
 
-  if (now - state.lastAlertAt < 900) return;
+  if (now - state.lastAlertAt < cooldown) return;
 
   state.lastAlertAt = now;
 
@@ -338,28 +416,46 @@ function playBeep(confidence) {
   if (!state.audio) return;
 
   const now = state.audio.currentTime;
-  const oscillator = state.audio.createOscillator();
-  const gain = state.audio.createGain();
-  const frequency = 620 + Math.round(confidence * 280);
+  const pattern = confidence > 0.78
+    ? { count: 3, gap: 0.105, duration: 0.085, gain: 0.25, base: 800 }
+    : confidence > 0.42
+      ? { count: 2, gap: 0.16, duration: 0.105, gain: 0.21, base: 690 }
+      : { count: 1, gap: 0.24, duration: 0.145, gain: 0.17, base: 560 };
 
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(frequency, now);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.22, now + 0.018);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-  oscillator.connect(gain);
-  gain.connect(state.audio.destination);
-  oscillator.start(now);
-  oscillator.stop(now + 0.2);
+  for (let index = 0; index < pattern.count; index += 1) {
+    playTone({
+      startAt: now + index * pattern.gap,
+      duration: pattern.duration,
+      frequency: pattern.base + Math.round(confidence * 230) + index * 24,
+      peakGain: pattern.gain
+    });
+  }
 }
 
-function setTargetColor(hex) {
-  const { red, green, blue } = hexToRgb(hex);
-  const hsv = rgbToHsv(red / 255, green / 255, blue / 255);
-  state.targetHue = hsv.hue;
-  state.targetSaturation = Math.max(0.12, hsv.saturation);
-  state.targetValue = Math.max(0.2, hsv.value);
+function playTone({ startAt, duration, frequency, peakGain }) {
+  const oscillator = state.audio.createOscillator();
+  const gain = state.audio.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(peakGain, startAt + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  oscillator.connect(gain);
+  gain.connect(state.audio.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.025);
+}
+
+function setTargetColor(hex, options = {}) {
+  const activeColors = options.activeColors || [hex];
+  const target = makeColorTarget(hex);
+  state.targetHue = target.hue;
+  state.targetSaturation = target.saturation;
+  state.targetValue = target.value;
+  state.activeTargets = uniqueColors(activeColors).map(makeColorTarget);
   document.documentElement.style.setProperty("--target", hex);
+  const { red, green, blue } = target.rgb;
   targetBox.style.background = `rgba(${red}, ${green}, ${blue}, 0.22)`;
   targetBox.style.boxShadow = `0 0 0 9999px rgba(255, 255, 255, 0.02), 0 0 26px rgba(${red}, ${green}, ${blue}, 0.55)`;
   screenFlash.style.background = `rgba(${red}, ${green}, ${blue}, 0.28)`;
@@ -383,6 +479,10 @@ function syncControls() {
   drawColorWheel();
 }
 
+function isNeutralTarget(target = null) {
+  return (target ? target.saturation : state.targetSaturation) < 0.24;
+}
+
 function setStatus(text, detected, confidence) {
   statusText.textContent = text;
   confidenceText.textContent = `${Math.round(confidence * 100)}%`;
@@ -392,7 +492,9 @@ function setStatus(text, detected, confidence) {
 function loadDiscLibrary() {
   try {
     const saved = JSON.parse(localStorage.getItem(libraryStorageKey) || "[]");
-    state.library = Array.isArray(saved) ? saved.filter(isValidDisc).slice(0, 20) : [];
+    state.library = Array.isArray(saved)
+      ? saved.map(normalizeDisc).filter(Boolean).slice(0, 20)
+      : [];
   } catch {
     state.library = [];
   }
@@ -412,15 +514,18 @@ function renderDiscLibrary() {
   }
 
   discList.innerHTML = state.library.map((disc) => {
-    const hue = Math.round(rgbToHsvFromHex(disc.color).hue);
-    const range = Math.round(disc.hueTolerance);
-
+    const colors = getDiscColors(disc);
+    const visibleColors = colors.slice(0, 3);
+    const extraCount = colors.length - visibleColors.length;
     return `
       <div class="disc-item">
-        <span class="disc-swatch" style="background: ${disc.color}"></span>
+        <span class="disc-swatches">
+          ${visibleColors.map((color) => `<span class="disc-swatch" style="background: ${color}"></span>`).join("")}
+          ${extraCount > 0 ? `<span class="disc-more">+${extraCount}</span>` : ""}
+        </span>
         <span class="disc-info">
           <span class="disc-name">${escapeHtml(disc.name)}</span>
-          <span class="disc-meta">${hue}° ± ${range}°</span>
+          <span class="disc-meta">${colors.length > 1 ? `${colors.length} colors` : colorSearchLabel(colors[0], disc.hueTolerance)}</span>
         </span>
         <button class="disc-action" type="button" data-action="load" data-id="${disc.id}">Load</button>
         <button class="disc-action delete" type="button" data-action="delete" data-id="${disc.id}">Delete</button>
@@ -429,18 +534,32 @@ function renderDiscLibrary() {
   }).join("");
 }
 
-function isValidDisc(disc) {
-  return (
-    disc &&
-    typeof disc.id === "string" &&
-    /^[a-z0-9.-]+$/i.test(disc.id) &&
-    typeof disc.name === "string" &&
-    /^#[0-9a-f]{6}$/i.test(disc.color) &&
-    Number.isFinite(disc.hueTolerance) &&
-    Number.isFinite(disc.minSaturation) &&
-    Number.isFinite(disc.minBrightness) &&
-    Number.isFinite(disc.triggerCoverage)
-  );
+function normalizeDisc(disc) {
+  if (!disc || typeof disc.name !== "string") return null;
+
+  const colors = uniqueColors(getDiscColors(disc));
+  if (colors.length === 0) return null;
+
+  return {
+    id: typeof disc.id === "string" && /^[a-z0-9.-]+$/i.test(disc.id) ? disc.id : String(Date.now()),
+    name: disc.name,
+    colors,
+    color: colors[0],
+    hueTolerance: Number.isFinite(disc.hueTolerance) ? disc.hueTolerance : 18,
+    minSaturation: Number.isFinite(disc.minSaturation) ? disc.minSaturation : 0.42,
+    minBrightness: Number.isFinite(disc.minBrightness) ? disc.minBrightness : 0.28,
+    triggerCoverage: Number.isFinite(disc.triggerCoverage) ? disc.triggerCoverage : 0.015,
+    savedAt: Number.isFinite(disc.savedAt) ? disc.savedAt : Date.now()
+  };
+}
+
+function getDiscColors(disc) {
+  const colors = Array.isArray(disc.colors) ? disc.colors : [disc.color];
+  return colors.filter((color) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color));
+}
+
+function uniqueColors(colors) {
+  return [...new Set(colors.map((color) => color.toLowerCase()))];
 }
 
 function hueDistance(a, b) {
@@ -482,9 +601,35 @@ function hexToRgb(hex) {
   };
 }
 
+function makeColorTarget(hex) {
+  const rgb = hexToRgb(hex);
+  const hsv = rgbToHsv(rgb.red / 255, rgb.green / 255, rgb.blue / 255);
+
+  return {
+    hex: hex.toLowerCase(),
+    hue: hsv.hue,
+    saturation: hsv.saturation,
+    value: hsv.value,
+    rgb
+  };
+}
+
 function rgbToHsvFromHex(hex) {
   const { red, green, blue } = hexToRgb(hex);
   return rgbToHsv(red / 255, green / 255, blue / 255);
+}
+
+function colorSearchLabel(hex, hueTolerance) {
+  const hsv = rgbToHsvFromHex(hex);
+
+  if (hsv.saturation < 0.24) {
+    const tolerance = 0.06 + hueTolerance / 300;
+    const low = Math.max(0, Math.round((hsv.value - tolerance) * 100));
+    const high = Math.min(100, Math.round((hsv.value + tolerance) * 100));
+    return `Neutral ${low}-${high}% light`;
+  }
+
+  return `${Math.round(hsv.hue)}° ± ${Math.round(hueTolerance)}°`;
 }
 
 function escapeHtml(value) {
@@ -618,6 +763,19 @@ function drawColorWheel() {
 }
 
 function updateRangeHint() {
+  if (state.activeTargets.length > 1) {
+    rangeHint.textContent = `Searching ${state.activeTargets.length} saved colors`;
+    return;
+  }
+
+  if (isNeutralTarget()) {
+    const tolerance = 0.06 + state.hueTolerance / 300;
+    const low = Math.max(0, Math.round((state.targetValue - tolerance) * 100));
+    const high = Math.min(100, Math.round((state.targetValue + tolerance) * 100));
+    rangeHint.textContent = `Neutral ${low}-${high}% light`;
+    return;
+  }
+
   const start = normalizeHue(state.targetHue - state.hueTolerance);
   const end = normalizeHue(state.targetHue + state.hueTolerance);
   rangeHint.textContent = `Searching ${Math.round(start)}° to ${Math.round(end)}°`;
@@ -647,6 +805,13 @@ function drawVideoCover(context, source, width, height) {
     sh = sourceWidth / targetAspect;
     sy = (sourceHeight - sh) / 2;
   }
+
+  const zoomedWidth = sw / state.zoom;
+  const zoomedHeight = sh / state.zoom;
+  sx += (sw - zoomedWidth) / 2;
+  sy += (sh - zoomedHeight) / 2;
+  sw = zoomedWidth;
+  sh = zoomedHeight;
 
   context.drawImage(source, sx, sy, sw, sh, 0, 0, width, height);
 }

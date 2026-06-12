@@ -12,12 +12,15 @@ After opening it:
 
 1. Tap `Start Camera`.
 2. Allow camera access.
-3. Pick a preset, use the full color wheel, or aim the reticle at the disc and tap `Sample Center`.
-4. Name the disc in `My Bag` and tap `Save` if you want to reuse that color later.
-5. Tune `Range`, `Sat`, `Light`, and `Trigger` in the field.
-6. Tap `Hide controls` to slide the menu down and scan with an unobstructed camera view.
+3. Use `-` and `+` to zoom the camera view when you need a closer look.
+4. Pick a preset, use the full color wheel, or aim the reticle at the disc and tap `Sample Center`.
+5. Name the disc in `My Bag` and tap `Save Color` if you want to reuse that color later. Save the same disc name again to add another color to that disc.
+6. Tune `Range`, `Sat`, `Light`, and `Trigger` in the field.
+7. Tap `Hide controls` to slide the menu down and scan with an unobstructed camera view.
 
 The first tap also unlocks browser audio, which is required before iPhone Safari will play the detection beep.
+
+The audio alert changes with confidence: weak matches give one slower beep, medium matches give two beeps, and strong matches give a faster three-beep pattern.
 
 ## Local layout test
 
@@ -35,6 +38,8 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Increase `Sat` or `Light` to reject leaves, bark, shadows, and soil.
 - Increase `Trigger` if small flecks cause false alerts.
 - Decrease `Trigger` when the disc is mostly hidden.
-- Turn off `Grey view` if you want to compare against the unfiltered camera feed while tuning.
+- For white or grey discs, use the white/grey presets or `Sample Center`; the app switches to neutral brightness matching instead of hue matching.
+- Use camera zoom sparingly; higher zoom helps inspect brush but makes hand shake more obvious.
+- Use `View` to switch between grey isolation, boosted-color view, mask-only view, and the unfiltered color feed.
 - Use `Show controls` to bring the menu back up when lighting changes or you switch discs.
-- Saved discs are stored in the browser on that iPhone. Use `Load` to restore a disc color and its detection settings.
+- Saved discs are stored in the browser on that iPhone. Use `Load` to restore a disc's saved colors and detection settings.

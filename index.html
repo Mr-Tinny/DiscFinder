@@ -40,6 +40,12 @@
             <span>Start Camera</span>
           </button>
 
+          <div class="zoom-controls" aria-label="Camera zoom">
+            <button id="zoomOutButton" class="icon-button" type="button" aria-label="Zoom out">−</button>
+            <span id="zoomValue" class="zoom-value">1.0×</span>
+            <button id="zoomInButton" class="icon-button" type="button" aria-label="Zoom in">+</button>
+          </div>
+
           <label class="color-pick">
             <span class="sr-only">Target disc color</span>
             <input id="colorPicker" type="color" value="#ff1f92">
@@ -58,6 +64,23 @@
           </div>
         </div>
 
+        <section class="disc-library" aria-labelledby="libraryTitle">
+          <div class="library-header">
+            <div>
+              <strong id="libraryTitle">My Bag</strong>
+              <span id="libraryCount">No saved discs</span>
+            </div>
+            <button id="saveDiscButton" class="secondary-button compact-button" type="button">Save Color</button>
+          </div>
+
+          <label class="disc-name-field">
+            <span class="sr-only">Disc name</span>
+            <input id="discNameInput" type="text" maxlength="32" placeholder="Name this disc">
+          </label>
+
+          <div id="discList" class="disc-list" aria-live="polite"></div>
+        </section>
+
         <div class="wheel-wrap">
           <canvas id="colorWheel" width="220" height="220" aria-label="Full color wheel"></canvas>
           <div class="wheel-copy">
@@ -73,6 +96,8 @@
           <button class="preset" type="button" data-color="#0078ff" aria-label="Blue"></button>
           <button class="preset" type="button" data-color="#9c3bff" aria-label="Purple"></button>
           <button class="preset" type="button" data-color="#ff2525" aria-label="Red"></button>
+          <button class="preset" type="button" data-color="#f4f4f4" aria-label="White"></button>
+          <button class="preset" type="button" data-color="#888888" aria-label="Grey"></button>
         </div>
 
         <div class="sliders">
@@ -101,22 +126,13 @@
           </label>
         </div>
 
-        <section class="disc-library" aria-labelledby="libraryTitle">
-          <div class="library-header">
-            <div>
-              <strong id="libraryTitle">My Bag</strong>
-              <span id="libraryCount">No saved discs</span>
-            </div>
-            <button id="saveDiscButton" class="secondary-button compact-button" type="button">Save</button>
-          </div>
-
-          <label class="disc-name-field">
-            <span class="sr-only">Disc name</span>
-            <input id="discNameInput" type="text" maxlength="32" placeholder="Name this disc">
-          </label>
-
-          <div id="discList" class="disc-list" aria-live="polite"></div>
-        </section>
+        <div class="view-row" role="radiogroup" aria-label="Camera view mode">
+          <span>View</span>
+          <label><input type="radio" name="viewMode" value="grey" checked> Grey</label>
+          <label><input type="radio" name="viewMode" value="boost"> Boost</label>
+          <label><input type="radio" name="viewMode" value="mask"> Mask</label>
+          <label><input type="radio" name="viewMode" value="color"> Color</label>
+        </div>
 
         <div class="audio-row">
           <label class="toggle">
@@ -127,11 +143,6 @@
           <label class="toggle">
             <input id="flashToggle" type="checkbox" checked>
             <span>Flash</span>
-          </label>
-
-          <label class="toggle">
-            <input id="greyToggle" type="checkbox" checked>
-            <span>Grey view</span>
           </label>
         </div>
       </form>
