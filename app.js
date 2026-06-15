@@ -66,7 +66,7 @@ const state = {
   hueTolerance: 18,
   minSaturation: 0.42,
   minBrightness: 0.28,
-  triggerCoverage: 0.015,
+  triggerCoverage: 0.006,
   activeTargets: [],
   viewMode: "grey",
   zoom: 1,
@@ -467,8 +467,13 @@ function detectAndFilterColor(image, width, height) {
 
   const matched = blobResult.matched;
   const coverage = sampled > 0 ? matched / sampled : 0;
-  const detected = coverage >= state.triggerCoverage;
-  const confidence = Math.min(1, coverage / Math.max(state.triggerCoverage, 0.0001));
+  const coverageConfidence = Math.min(1, coverage / Math.max(state.triggerCoverage, 0.0001));
+  const distantBlobPixels = getDistantBlobPixels(width, height);
+  const distantBlobDetected = blobResult.largestBlobPixels >= distantBlobPixels;
+  const distantBlobConfidence = Math.min(1, blobResult.largestBlobPixels / Math.max(distantBlobPixels * 2, 1));
+  const detected = coverage >= state.triggerCoverage || distantBlobDetected;
+  const confidence = Math.max(coverageConfidence, distantBlobConfidence);
+  const box = blobResult.primaryBox || blobResult.combinedBox;
 
   return {
     detected,
@@ -478,12 +483,9 @@ function detectAndFilterColor(image, width, height) {
     rawMatched,
     filteredMatched: Math.max(0, rawMatched - matched),
     blobCount: blobResult.blobCount,
-    box: matched > 0 ? {
-      x: blobResult.minX / width,
-      y: blobResult.minY / height,
-      width: Math.max(blobResult.maxX - blobResult.minX, 1) / width,
-      height: Math.max(blobResult.maxY - blobResult.minY, 1) / height
-    } : null
+    largestBlobPixels: blobResult.largestBlobPixels,
+    distantBlobDetected,
+    box: box ? normalizeBox(box, width, height) : null
   };
 }
 
@@ -499,6 +501,8 @@ function filterMatchBlobs(mask, width, height) {
   let minY = height;
   let maxX = 0;
   let maxY = 0;
+  let largestBlobPixels = 0;
+  let primaryBox = null;
 
   for (let start = 0; start < total; start += 1) {
     if (!mask[start] || visited[start]) continue;
@@ -569,9 +573,25 @@ function filterMatchBlobs(mask, width, height) {
     minY = Math.min(minY, localMinY);
     maxX = Math.max(maxX, localMaxX);
     maxY = Math.max(maxY, localMaxY);
+
+    if (componentLength > largestBlobPixels) {
+      largestBlobPixels = componentLength;
+      primaryBox = {
+        minX: localMinX,
+        minY: localMinY,
+        maxX: localMaxX,
+        maxY: localMaxY
+      };
+    }
   }
 
-  return { matched, blobCount, minX, minY, maxX, maxY };
+  return {
+    matched,
+    blobCount,
+    largestBlobPixels,
+    primaryBox,
+    combinedBox: matched > 0 ? { minX, minY, maxX, maxY } : null
+  };
 }
 
 function summarizeMatchMask(mask, width, height) {
@@ -592,19 +612,34 @@ function summarizeMatchMask(mask, width, height) {
     maxY = Math.max(maxY, y);
   }
 
+  const box = matched > 0 ? { minX, minY, maxX, maxY } : null;
+
   return {
     matched,
     blobCount: matched > 0 ? 1 : 0,
-    minX,
-    minY,
-    maxX,
-    maxY
+    largestBlobPixels: matched,
+    primaryBox: box,
+    combinedBox: box
   };
 }
 
 function getMinimumBlobPixels(width, height) {
   const framePixels = width * height;
-  return Math.max(4, Math.min(18, Math.round(framePixels * 0.000035)));
+  return Math.max(3, Math.min(8, Math.round(framePixels * 0.000018)));
+}
+
+function getDistantBlobPixels(width, height) {
+  const framePixels = width * height;
+  return Math.max(7, Math.min(24, Math.round(framePixels * 0.000075)));
+}
+
+function normalizeBox(box, width, height) {
+  return {
+    x: box.minX / width,
+    y: box.minY / height,
+    width: Math.max(box.maxX - box.minX, 1) / width,
+    height: Math.max(box.maxY - box.minY, 1) / height
+  };
 }
 
 function matchesTarget(red, green, blue) {
@@ -855,7 +890,8 @@ function updateScanHud(result = null) {
   const coverage = (result.coverage * 100).toFixed(result.coverage >= 0.01 ? 1 : 2);
   const filtered = result.filteredMatched > 0 ? `, ${result.filteredMatched} specks ignored` : "";
   const blobs = result.blobCount === 1 ? "1 blob" : `${result.blobCount} blobs`;
-  hudDetailText.textContent = `${coverage}% frame, ${blobs}${filtered}`;
+  const farBlob = result.distantBlobDetected ? ", far blob" : "";
+  hudDetailText.textContent = `${coverage}% frame, ${blobs}${farBlob}${filtered}`;
 }
 
 function loadDiscLibrary() {
@@ -918,7 +954,7 @@ function normalizeDisc(disc) {
     hueTolerance: Number.isFinite(disc.hueTolerance) ? disc.hueTolerance : 18,
     minSaturation: Number.isFinite(disc.minSaturation) ? disc.minSaturation : 0.42,
     minBrightness: Number.isFinite(disc.minBrightness) ? disc.minBrightness : 0.28,
-    triggerCoverage: Number.isFinite(disc.triggerCoverage) ? disc.triggerCoverage : 0.015,
+    triggerCoverage: Number.isFinite(disc.triggerCoverage) ? disc.triggerCoverage : 0.006,
     savedAt: Number.isFinite(disc.savedAt) ? disc.savedAt : Date.now()
   };
 }

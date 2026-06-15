@@ -41,11 +41,11 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Increase `Range` when sunlight or shade shifts the apparent disc color.
 - Increase `Sat` or `Light` to reject leaves, bark, shadows, and soil.
 - Increase `Trigger` if small flecks cause false alerts.
-- Decrease `Trigger` when the disc is mostly hidden.
+- Decrease `Trigger` when the disc is mostly hidden or moderately far away. The default is now tuned lower so small coherent disc-colored blobs can still alert.
 - For white or grey discs, use the white/grey presets or `Sample Center`; the app switches to neutral brightness matching instead of hue matching.
 - Use camera zoom sparingly; higher zoom helps inspect brush but makes hand shake more obvious. Zoom remains available above `Show controls` when the menu is hidden.
 - Use `View` to switch between grey isolation, boosted-color view, mask-only view, edge/outline view, and the unfiltered color feed.
-- Keep `Blob filter` on to ignore isolated single-pixel flecks while still preserving small matching patches from partially hidden discs.
+- Keep `Blob filter` on to ignore isolated one- or two-pixel flecks while still preserving small matching patches from partially hidden or farther-away discs.
 - Keep `Suppress green` on to automatically reject foliage-like greens unless you are searching for a green disc.
 - When controls are hidden, the scan HUD shows the active color, confidence, frame coverage, detected blob count, and ignored speck count.
 - Use `Show controls` to bring the menu back up when lighting changes or you switch discs.
