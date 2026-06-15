@@ -18,6 +18,8 @@ const saveDiscButton = document.querySelector("#saveDiscButton");
 const discNameInput = document.querySelector("#discNameInput");
 const discList = document.querySelector("#discList");
 const libraryCount = document.querySelector("#libraryCount");
+const profileCaptureButton = document.querySelector("#profileCaptureButton");
+const profileSummary = document.querySelector("#profileSummary");
 const colorPicker = document.querySelector("#colorPicker");
 const colorWheel = document.querySelector("#colorWheel");
 const wheelCtx = colorWheel.getContext("2d", { willReadFrequently: true });
@@ -54,6 +56,12 @@ const addColorButton = document.querySelector("#addColorButton");
 const replaceColorButton = document.querySelector("#replaceColorButton");
 const removeColorButton = document.querySelector("#removeColorButton");
 const cancelEditButton = document.querySelector("#cancelEditButton");
+const profileCapture = document.querySelector("#profileCapture");
+const snapProfileButton = document.querySelector("#snapProfileButton");
+const cancelProfileButton = document.querySelector("#cancelProfileButton");
+const autoProfileToggle = document.querySelector("#autoProfileToggle");
+const profileStatusText = document.querySelector("#profileStatusText");
+const profileStatusDetail = document.querySelector("#profileStatusDetail");
 const presets = [...document.querySelectorAll(".preset")];
 const libraryStorageKey = "discFinder.library.v1";
 
@@ -75,9 +83,16 @@ const state = {
   lastAlertAt: 0,
   lastFrameAt: 0,
   lastRawFrame: null,
+  detectionHistory: [],
   library: [],
   editingDiscId: null,
-  editingColorIndex: 0
+  editingColorIndex: 0,
+  profileCaptureActive: false,
+  profileCaptureLoopId: 0,
+  profileStableFrames: 0,
+  lastProfileSignature: "",
+  lastProfileCheckAt: 0,
+  profileAutoCaptured: false
 };
 
 loadDiscLibrary();
@@ -96,11 +111,14 @@ menuToggle.addEventListener("click", toggleControls);
 sampleButton.addEventListener("click", sampleCenterColor);
 saveDiscButton.addEventListener("click", saveCurrentDisc);
 discList.addEventListener("click", handleDiscListClick);
+profileCaptureButton.addEventListener("click", openProfileCapture);
 editColorList.addEventListener("click", handleEditColorClick);
 addColorButton.addEventListener("click", addCurrentColorToEditingDisc);
 replaceColorButton.addEventListener("click", replaceSelectedDiscColor);
 removeColorButton.addEventListener("click", removeSelectedDiscColor);
 cancelEditButton.addEventListener("click", stopEditingDisc);
+snapProfileButton.addEventListener("click", () => captureDiscProfile("manual"));
+cancelProfileButton.addEventListener("click", closeProfileCapture);
 colorPicker.addEventListener("input", () => setTargetColor(colorPicker.value));
 rangeSlider.addEventListener("input", syncControls);
 satSlider.addEventListener("input", syncControls);
@@ -206,7 +224,7 @@ function handleDiscListClick(event) {
 }
 
 function loadDisc(disc) {
-  const colors = getDiscColors(disc);
+  const colors = getDiscSearchColors(disc);
   colorPicker.value = colors[0];
   rangeSlider.value = Math.round(disc.hueTolerance);
   satSlider.value = Math.round(disc.minSaturation * 100);
@@ -216,7 +234,10 @@ function loadDisc(disc) {
   syncControls();
   setTargetColor(colors[0], { activeColors: colors });
   discNameInput.value = disc.name;
-  sampleText.textContent = colors.length > 1 ? `Loaded ${colors.length} colors` : `Loaded ${disc.name}`;
+  sampleText.textContent = getDiscProfileColors(disc).length > 0
+    ? `Loaded profile (${colors.length} colors)`
+    : colors.length > 1 ? `Loaded ${colors.length} colors` : `Loaded ${disc.name}`;
+  updateProfileSummary(disc);
   setStatus(`Loaded ${disc.name}`, false, 0);
 }
 
@@ -233,6 +254,7 @@ function stopEditingDisc(options = {}) {
   state.editingColorIndex = 0;
   discEditPanel.hidden = true;
   saveDiscButton.textContent = "Save Color";
+  updateProfileSummary();
 
   if (!options.silent) {
     setStatus("Finished editing", false, 0);
@@ -249,14 +271,18 @@ function renderEditPanel() {
   if (!disc) {
     discEditPanel.hidden = true;
     saveDiscButton.textContent = "Save Color";
+    updateProfileSummary();
     return;
   }
 
   const colors = getDiscColors(disc);
+  const profileColors = getDiscProfileColors(disc);
   state.editingColorIndex = Math.min(state.editingColorIndex, Math.max(colors.length - 1, 0));
   discEditPanel.hidden = false;
   saveDiscButton.textContent = "Save New Disc";
-  editDiscTitle.textContent = `Editing ${disc.name}`;
+  editDiscTitle.textContent = profileColors.length > 0
+    ? `Editing ${disc.name} + profile`
+    : `Editing ${disc.name}`;
   removeColorButton.disabled = colors.length <= 1;
   editColorList.innerHTML = colors.map((color, index) => `
     <button
@@ -267,6 +293,7 @@ function renderEditPanel() {
       style="--edit-color: ${color}"
     ></button>
   `).join("");
+  updateProfileSummary(disc);
 }
 
 function handleEditColorClick(event) {
@@ -346,6 +373,339 @@ function updateEditingDisc(updater, message) {
   renderEditPanel();
   loadDisc(updated);
   setStatus(message, false, 0);
+}
+
+function openProfileCapture() {
+  if (!state.running || !video.videoWidth || !video.videoHeight) {
+    setStatus("Start camera first", false, 0);
+    startButton.focus();
+    return;
+  }
+
+  const name = getProfileTargetName();
+  if (!name) {
+    discNameInput.focus();
+    setStatus("Name the disc first", false, 0);
+    return;
+  }
+
+  state.profileCaptureActive = true;
+  state.profileStableFrames = 0;
+  state.lastProfileSignature = "";
+  state.lastProfileCheckAt = 0;
+  state.profileAutoCaptured = false;
+  profileCapture.hidden = false;
+  appShell.classList.add("profile-capturing");
+  updateProfileCaptureStatus("Fill circle with disc", "Auto capture waits for a steady profile");
+  setStatus("Fill circle with disc", false, 0);
+  requestAnimationFrame(updateProfileCaptureReadiness);
+}
+
+function closeProfileCapture() {
+  state.profileCaptureActive = false;
+  state.profileCaptureLoopId += 1;
+  profileCapture.hidden = true;
+  appShell.classList.remove("profile-capturing");
+  setStatus("Profile capture closed", false, 0);
+}
+
+function captureDiscProfile(source = "manual", profileOverride = null) {
+  if (state.profileAutoCaptured && source === "auto") return;
+
+  if (source === "auto") {
+    state.profileAutoCaptured = true;
+  }
+
+  const profile = profileOverride || extractDiscProfileFromVideo();
+
+  if (!profile || profile.colors.length === 0) {
+    state.profileAutoCaptured = false;
+    setStatus("No profile colors found", false, 0);
+    updateProfileCaptureStatus("No profile colors found", "Try brighter light or use manual Capture again");
+    return;
+  }
+
+  const disc = saveDiscProfile(profile);
+  closeProfileCapture();
+  loadDisc(disc);
+  renderEditPanel();
+  setStatus(`${source === "auto" ? "Auto-captured" : "Captured"} ${profile.colors.length} profile colors`, false, 0);
+}
+
+function updateProfileCaptureReadiness(time) {
+  if (!state.profileCaptureActive) return;
+
+  if (time - state.lastProfileCheckAt < 180) {
+    requestAnimationFrame(updateProfileCaptureReadiness);
+    return;
+  }
+
+  state.lastProfileCheckAt = time;
+  const profile = extractDiscProfileFromVideo();
+  const readiness = scoreProfileReadiness(profile);
+
+  if (!profile || profile.colors.length < 2 || readiness.fillScore < 0.24) {
+    state.profileStableFrames = 0;
+    state.lastProfileSignature = "";
+    updateProfileCaptureStatus("Fill circle with disc", "Center the disc inside the circle");
+    requestAnimationFrame(updateProfileCaptureReadiness);
+    return;
+  }
+
+  const signature = getProfileSignature(profile);
+  const similarity = state.lastProfileSignature
+    ? getProfileSignatureSimilarity(signature, state.lastProfileSignature)
+    : 0;
+  const stable = similarity >= 0.72 && readiness.score >= 0.48;
+  state.profileStableFrames = stable ? state.profileStableFrames + 1 : 1;
+  state.lastProfileSignature = signature;
+
+  if (state.profileStableFrames >= 4 && autoProfileToggle.checked) {
+    updateProfileCaptureStatus("Capturing profile", `${profile.colors.length} colors locked`);
+    captureDiscProfile("auto", profile);
+    return;
+  }
+
+  if (state.profileStableFrames >= 2) {
+    updateProfileCaptureStatus("Hold steady", `${profile.colors.length} colors found`);
+  } else if (readiness.hasOuterColor) {
+    updateProfileCaptureStatus("Almost ready", "Hold the disc steady");
+  } else {
+    updateProfileCaptureStatus("Fill the rim", "The outer ring needs more disc color");
+  }
+
+  requestAnimationFrame(updateProfileCaptureReadiness);
+}
+
+function updateProfileCaptureStatus(text, detail) {
+  profileStatusText.textContent = text;
+  profileStatusDetail.textContent = detail;
+}
+
+function getProfileTargetName() {
+  const editingDisc = getEditingDisc();
+  return editingDisc ? editingDisc.name : discNameInput.value.trim();
+}
+
+function updateProfileSummary(disc = getEditingDisc()) {
+  const profileColors = getDiscProfileColors(disc);
+  profileSummary.textContent = profileColors.length > 0
+    ? `Photo profile: ${profileColors.length} colors`
+    : "Capture a circular disc profile";
+}
+
+function saveDiscProfile(profile) {
+  const editingDisc = getEditingDisc();
+  const name = editingDisc ? editingDisc.name : discNameInput.value.trim();
+  const existing = editingDisc || state.library.find((item) => item.name.toLowerCase() === name.toLowerCase());
+  const nextColors = uniqueColors([
+    ...profile.colors,
+    ...getDiscColors(existing || {})
+  ]).slice(0, 8);
+  const disc = existing ? {
+    ...existing,
+    colors: nextColors,
+    color: nextColors[0],
+    profile,
+    hueTolerance: Math.max(state.hueTolerance, 22),
+    minSaturation: Math.min(state.minSaturation, 0.34),
+    minBrightness: Math.min(state.minBrightness, 0.22),
+    triggerCoverage: state.triggerCoverage,
+    savedAt: Date.now()
+  } : {
+    id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()),
+    name,
+    colors: nextColors,
+    color: nextColors[0],
+    profile,
+    hueTolerance: Math.max(state.hueTolerance, 22),
+    minSaturation: Math.min(state.minSaturation, 0.34),
+    minBrightness: Math.min(state.minBrightness, 0.22),
+    triggerCoverage: state.triggerCoverage,
+    savedAt: Date.now()
+  };
+
+  state.library = [
+    disc,
+    ...state.library.filter((item) => item.id !== disc.id)
+  ].slice(0, 20);
+  state.editingDiscId = disc.id;
+  state.editingColorIndex = 0;
+  discNameInput.value = disc.name;
+  persistDiscLibrary();
+  renderDiscLibrary();
+  return disc;
+}
+
+function extractDiscProfileFromVideo() {
+  const bounds = scanner.getBoundingClientRect();
+  const width = Math.max(240, Math.round(Math.min(520, bounds.width)));
+  const height = Math.max(240, Math.round(width * (bounds.height / Math.max(bounds.width, 1))));
+  const captureCanvas = document.createElement("canvas");
+  captureCanvas.width = width;
+  captureCanvas.height = height;
+  const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
+  drawVideoCover(captureContext, video, width, height);
+  const image = captureContext.getImageData(0, 0, width, height);
+  const bins = new Map();
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = Math.min(width, height) * 0.36;
+  const step = Math.max(1, Math.round(Math.min(width, height) / 240));
+  let sampleCount = 0;
+  let innerCount = 0;
+  let outerCount = 0;
+  let coloredInnerCount = 0;
+  let coloredOuterCount = 0;
+
+  for (let y = Math.max(0, Math.floor(centerY - radius)); y <= Math.min(height - 1, Math.ceil(centerY + radius)); y += step) {
+    for (let x = Math.max(0, Math.floor(centerX - radius)); x <= Math.min(width - 1, Math.ceil(centerX + radius)); x += step) {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      const distanceRatio = Math.sqrt(dx * dx + dy * dy) / radius;
+      if (distanceRatio > 1) continue;
+
+      const offset = (y * width + x) * 4;
+      const red = image.data[offset];
+      const green = image.data[offset + 1];
+      const blue = image.data[offset + 2];
+      const hsv = rgbToHsv(red / 255, green / 255, blue / 255);
+      if (hsv.value < 0.08) continue;
+
+      if (distanceRatio > 0.68) {
+        outerCount += 1;
+        if (hsv.saturation > 0.16 || hsv.value > 0.72) coloredOuterCount += 1;
+      } else {
+        innerCount += 1;
+        if (hsv.saturation > 0.16 || hsv.value > 0.72) coloredInnerCount += 1;
+      }
+
+      const key = getProfileColorKey(hsv);
+      const weight = (distanceRatio > 0.68 ? 1.35 : 1) + (hsv.saturation > 0.35 ? 0.18 : 0);
+      const bin = bins.get(key) || {
+        red: 0,
+        green: 0,
+        blue: 0,
+        count: 0,
+        weight: 0,
+        saturation: 0,
+        value: 0
+      };
+
+      bin.red += red;
+      bin.green += green;
+      bin.blue += blue;
+      bin.count += 1;
+      bin.weight += weight;
+      bin.saturation += hsv.saturation;
+      bin.value += hsv.value;
+      bins.set(key, bin);
+      sampleCount += 1;
+    }
+  }
+
+  const minCount = Math.max(6, Math.round(sampleCount * 0.006));
+  const candidates = [...bins.values()]
+    .filter((bin) => bin.count >= minCount)
+    .map((bin) => {
+      const red = Math.round(bin.red / bin.count);
+      const green = Math.round(bin.green / bin.count);
+      const blue = Math.round(bin.blue / bin.count);
+      const saturation = bin.saturation / bin.count;
+      return {
+        hex: rgbToHex(red, green, blue),
+        score: bin.weight * (1 + saturation * 0.22),
+        count: bin.count
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const colors = [];
+  for (const candidate of candidates) {
+    if (colors.every((color) => isDistinctProfileColor(color, candidate.hex))) {
+      colors.push(candidate.hex);
+    }
+
+    if (colors.length >= 6) break;
+  }
+
+  return {
+    colors,
+    capturedAt: Date.now(),
+    sampleCount,
+    fillScore: sampleCount > 0
+      ? (coloredInnerCount + coloredOuterCount) / sampleCount
+      : 0,
+    innerFill: innerCount > 0 ? coloredInnerCount / innerCount : 0,
+    outerFill: outerCount > 0 ? coloredOuterCount / outerCount : 0
+  };
+}
+
+function scoreProfileReadiness(profile) {
+  if (!profile) {
+    return { score: 0, fillScore: 0, hasOuterColor: false };
+  }
+
+  const colorScore = clamp(profile.colors.length / 4);
+  const fillScore = clamp(profile.fillScore * 1.45);
+  const outerScore = clamp(profile.outerFill * 1.55);
+  const innerScore = clamp(profile.innerFill * 1.25);
+  return {
+    score: colorScore * 0.28 + fillScore * 0.28 + outerScore * 0.26 + innerScore * 0.18,
+    fillScore: profile.fillScore,
+    hasOuterColor: profile.outerFill >= 0.22
+  };
+}
+
+function getProfileSignature(profile) {
+  return profile.colors
+    .slice(0, 5)
+    .map((hex) => {
+      const hsv = rgbToHsvFromHex(hex);
+      if (hsv.saturation < 0.2) {
+        return `n${Math.round(hsv.value * 8)}`;
+      }
+
+      return `h${Math.round(normalizeHue(hsv.hue) / 18)}s${Math.round(hsv.saturation * 4)}`;
+    })
+    .join("|");
+}
+
+function getProfileSignatureSimilarity(current, previous) {
+  const currentParts = current.split("|").filter(Boolean);
+  const previousParts = previous.split("|").filter(Boolean);
+  if (currentParts.length === 0 || previousParts.length === 0) return 0;
+
+  const previousSet = new Set(previousParts);
+  const shared = currentParts.filter((part) => previousSet.has(part)).length;
+  return shared / Math.max(currentParts.length, previousParts.length);
+}
+
+function getProfileColorKey(hsv) {
+  if (hsv.saturation < 0.18) {
+    return `n-${Math.round(hsv.value * 9)}`;
+  }
+
+  const hue = Math.round(normalizeHue(hsv.hue) / 12) * 12;
+  const saturation = Math.round(hsv.saturation * 5);
+  const value = Math.round(hsv.value * 5);
+  return `c-${hue}-${saturation}-${value}`;
+}
+
+function isDistinctProfileColor(firstHex, secondHex) {
+  const first = hexToRgb(firstHex);
+  const second = hexToRgb(secondHex);
+  const firstHsv = rgbToHsv(first.red / 255, first.green / 255, first.blue / 255);
+  const secondHsv = rgbToHsv(second.red / 255, second.green / 255, second.blue / 255);
+
+  if (firstHsv.saturation < 0.22 && secondHsv.saturation < 0.22) {
+    return Math.abs(firstHsv.value - secondHsv.value) > 0.16;
+  }
+
+  const hueGap = hueDistance(firstHsv.hue, secondHsv.hue);
+  const satGap = Math.abs(firstHsv.saturation - secondHsv.saturation);
+  const valueGap = Math.abs(firstHsv.value - secondHsv.value);
+  return hueGap > 16 || satGap > 0.22 || valueGap > 0.18;
 }
 
 function adjustZoom(delta) {
@@ -445,6 +805,7 @@ function detectAndFilterColor(image, width, height) {
   const data = image.data;
   const sampled = width * height;
   const matchMask = new Uint8Array(sampled);
+  const strictMask = new Uint8Array(sampled);
   let rawMatched = 0;
 
   for (let index = 0; index < sampled; index += 1) {
@@ -452,49 +813,78 @@ function detectAndFilterColor(image, width, height) {
     const red = data[offset] / 255;
     const green = data[offset + 1] / 255;
     const blue = data[offset + 2] / 255;
+    const matchStrength = getTargetMatchStrength(red, green, blue);
 
-    if (matchesTarget(red, green, blue)) {
+    if (matchStrength > 0) {
       matchMask[index] = 1;
       rawMatched += 1;
+
+      if (matchStrength >= 1) {
+        strictMask[index] = 1;
+      }
     }
   }
 
   const blobResult = blobFilterToggle.checked
-    ? filterMatchBlobs(matchMask, width, height)
-    : summarizeMatchMask(matchMask, width, height);
+    ? filterMatchBlobs(matchMask, strictMask, width, height)
+    : summarizeMatchMask(matchMask, strictMask, width, height);
 
   renderFrameByMode(data, matchMask, width, height);
 
   const matched = blobResult.matched;
   const coverage = sampled > 0 ? matched / sampled : 0;
-  const coverageConfidence = Math.min(1, coverage / Math.max(state.triggerCoverage, 0.0001));
+  const primaryCandidate = blobResult.primaryCandidate;
+  const adaptiveTrigger = getAdaptiveTriggerCoverage(primaryCandidate, blobResult.blobCount);
+  const coverageConfidence = Math.min(1, coverage / Math.max(adaptiveTrigger, 0.0001));
   const distantBlobPixels = getDistantBlobPixels(width, height);
-  const distantBlobDetected = blobResult.largestBlobPixels >= distantBlobPixels;
-  const distantBlobConfidence = Math.min(1, blobResult.largestBlobPixels / Math.max(distantBlobPixels * 2, 1));
-  const detected = coverage >= state.triggerCoverage || distantBlobDetected;
-  const confidence = Math.max(coverageConfidence, distantBlobConfidence);
-  const box = blobResult.primaryBox || blobResult.combinedBox;
+  const temporalResult = updateDetectionHistory(primaryCandidate, width, height);
+  const distantBlobDetected = Boolean(
+    primaryCandidate &&
+    primaryCandidate.pixels >= Math.round(distantBlobPixels * 0.55) &&
+    primaryCandidate.strictPixels >= 1 &&
+    primaryCandidate.score >= 0.54
+  );
+  const distantBlobConfidence = primaryCandidate
+    ? Math.min(1, (primaryCandidate.score * 0.72) + (primaryCandidate.pixels / Math.max(distantBlobPixels * 3, 1)))
+    : 0;
+  const temporalDetected = Boolean(primaryCandidate && primaryCandidate.score >= 0.46 && temporalResult.frames >= 2);
+  const detected = coverage >= adaptiveTrigger || distantBlobDetected || temporalDetected;
+  const confidence = Math.min(1, Math.max(
+    coverageConfidence,
+    distantBlobConfidence,
+    temporalResult.confidence,
+    primaryCandidate ? primaryCandidate.score * 0.92 : 0
+  ));
+  const box = primaryCandidate || blobResult.combinedBox;
 
   return {
     detected,
     coverage,
     confidence,
+    adaptiveTrigger,
     matched,
     rawMatched,
     filteredMatched: Math.max(0, rawMatched - matched),
     blobCount: blobResult.blobCount,
     largestBlobPixels: blobResult.largestBlobPixels,
     distantBlobDetected,
+    temporalDetected,
+    persistenceFrames: temporalResult.frames,
+    shapeScore: primaryCandidate ? primaryCandidate.shapeScore : 0,
+    arcScore: primaryCandidate ? primaryCandidate.arcScore : 0,
+    candidateScore: primaryCandidate ? primaryCandidate.score : 0,
+    strictPixels: primaryCandidate ? primaryCandidate.strictPixels : 0,
     box: box ? normalizeBox(box, width, height) : null
   };
 }
 
-function filterMatchBlobs(mask, width, height) {
+function filterMatchBlobs(mask, strictMask, width, height) {
   const total = width * height;
   const visited = new Uint8Array(total);
   const stack = new Int32Array(total);
   const component = [];
   const minimumBlobPixels = getMinimumBlobPixels(width, height);
+  const candidates = [];
   let matched = 0;
   let blobCount = 0;
   let minX = width;
@@ -502,7 +892,6 @@ function filterMatchBlobs(mask, width, height) {
   let maxX = 0;
   let maxY = 0;
   let largestBlobPixels = 0;
-  let primaryBox = null;
 
   for (let start = 0; start < total; start += 1) {
     if (!mask[start] || visited[start]) continue;
@@ -560,13 +949,27 @@ function filterMatchBlobs(mask, width, height) {
       }
     }
 
-    if (componentLength < minimumBlobPixels) {
+    const candidate = scoreBlobCandidate({
+      component,
+      componentLength,
+      minX: localMinX,
+      minY: localMinY,
+      maxX: localMaxX,
+      maxY: localMaxY,
+      mask,
+      strictMask,
+      width,
+      height
+    });
+
+    if (componentLength < minimumBlobPixels || !isViableBlobCandidate(candidate)) {
       for (let index = 0; index < componentLength; index += 1) {
         mask[component[index]] = 0;
       }
       continue;
     }
 
+    candidates.push(candidate);
     blobCount += 1;
     matched += componentLength;
     minX = Math.min(minX, localMinX);
@@ -576,26 +979,23 @@ function filterMatchBlobs(mask, width, height) {
 
     if (componentLength > largestBlobPixels) {
       largestBlobPixels = componentLength;
-      primaryBox = {
-        minX: localMinX,
-        minY: localMinY,
-        maxX: localMaxX,
-        maxY: localMaxY
-      };
     }
   }
+
+  const primaryCandidate = candidates.sort((a, b) => b.score - a.score)[0] || null;
 
   return {
     matched,
     blobCount,
     largestBlobPixels,
-    primaryBox,
+    primaryCandidate,
     combinedBox: matched > 0 ? { minX, minY, maxX, maxY } : null
   };
 }
 
-function summarizeMatchMask(mask, width, height) {
+function summarizeMatchMask(mask, strictMask, width, height) {
   let matched = 0;
+  let strictPixels = 0;
   let minX = width;
   let minY = height;
   let maxX = 0;
@@ -606,6 +1006,7 @@ function summarizeMatchMask(mask, width, height) {
     const x = index % width;
     const y = Math.floor(index / width);
     matched += 1;
+    strictPixels += strictMask[index] ? 1 : 0;
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
     maxX = Math.max(maxX, x);
@@ -613,19 +1014,28 @@ function summarizeMatchMask(mask, width, height) {
   }
 
   const box = matched > 0 ? { minX, minY, maxX, maxY } : null;
+  const primaryCandidate = box ? {
+    ...box,
+    pixels: matched,
+    strictPixels,
+    strictRatio: matched > 0 ? strictPixels / matched : 0,
+    score: matched > 0 && strictPixels > 0 ? 0.58 : 0,
+    shapeScore: 0,
+    arcScore: 0
+  } : null;
 
   return {
     matched,
     blobCount: matched > 0 ? 1 : 0,
     largestBlobPixels: matched,
-    primaryBox: box,
+    primaryCandidate,
     combinedBox: box
   };
 }
 
 function getMinimumBlobPixels(width, height) {
   const framePixels = width * height;
-  return Math.max(3, Math.min(8, Math.round(framePixels * 0.000018)));
+  return Math.max(2, Math.min(6, Math.round(framePixels * 0.000014)));
 }
 
 function getDistantBlobPixels(width, height) {
@@ -640,6 +1050,180 @@ function normalizeBox(box, width, height) {
     width: Math.max(box.maxX - box.minX, 1) / width,
     height: Math.max(box.maxY - box.minY, 1) / height
   };
+}
+
+function scoreBlobCandidate({
+  component,
+  componentLength,
+  minX,
+  minY,
+  maxX,
+  maxY,
+  mask,
+  strictMask,
+  width,
+  height
+}) {
+  const boxWidth = Math.max(maxX - minX + 1, 1);
+  const boxHeight = Math.max(maxY - minY + 1, 1);
+  const boxArea = boxWidth * boxHeight;
+  const aspect = Math.min(boxWidth, boxHeight) / Math.max(boxWidth, boxHeight);
+  const fillRatio = componentLength / boxArea;
+  const angleBuckets = new Uint8Array(18);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  let strictPixels = 0;
+  let edgePixels = 0;
+
+  for (let item = 0; item < componentLength; item += 1) {
+    const index = component[item];
+    const x = index % width;
+    const y = Math.floor(index / width);
+
+    if (strictMask[index]) {
+      strictPixels += 1;
+    }
+
+    const edge = (
+      x === 0 ||
+      y === 0 ||
+      x === width - 1 ||
+      y === height - 1 ||
+      !mask[index - 1] ||
+      !mask[index + 1] ||
+      !mask[index - width] ||
+      !mask[index + width]
+    );
+
+    if (edge) {
+      edgePixels += 1;
+      const angle = normalizeHue(Math.atan2(y - centerY, x - centerX) * 180 / Math.PI);
+      const bucket = Math.min(angleBuckets.length - 1, Math.floor(angle / (360 / angleBuckets.length)));
+      angleBuckets[bucket] = 1;
+    }
+  }
+
+  const strictRatio = componentLength > 0 ? strictPixels / componentLength : 0;
+  const bucketsHit = angleBuckets.reduce((total, value) => total + value, 0);
+  const arcCoverage = bucketsHit / angleBuckets.length;
+  const edgeDensity = componentLength > 0 ? edgePixels / componentLength : 0;
+  const aspectScore = clamp((aspect - 0.24) / 0.76);
+  const fillScore = clamp((fillRatio - 0.05) / 0.42);
+  const rimScore = clamp((edgeDensity - 0.16) / 0.5);
+  const shapeScore = clamp(aspectScore * 0.55 + fillScore * 0.25 + rimScore * 0.2);
+  const arcScore = clamp((arcCoverage - 0.16) / 0.42);
+  const sizeScore = clamp(componentLength / Math.max(getDistantBlobPixels(width, height), 1));
+  const strictScore = clamp(strictRatio * 2.4);
+  let score = clamp(
+    strictScore * 0.36 +
+    shapeScore * 0.22 +
+    arcScore * 0.24 +
+    sizeScore * 0.18
+  );
+
+  if (strictPixels === 0) {
+    score *= 0.2;
+  }
+
+  if (aspect < 0.16) {
+    score *= 0.62;
+  }
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    pixels: componentLength,
+    strictPixels,
+    strictRatio,
+    shapeScore,
+    arcScore,
+    score
+  };
+}
+
+function isViableBlobCandidate(candidate) {
+  if (candidate.strictPixels < 1) return false;
+  if (candidate.pixels >= 3 && candidate.score >= 0.34) return true;
+  return candidate.pixels >= 2 && candidate.strictRatio >= 0.5 && candidate.score >= 0.28;
+}
+
+function getAdaptiveTriggerCoverage(candidate, blobCount) {
+  let factor = 1;
+
+  if (candidate) {
+    factor *= 1 - clamp(candidate.score) * 0.34;
+
+    if (candidate.arcScore > 0.35) {
+      factor *= 0.9;
+    }
+
+    if (candidate.strictRatio > 0.36) {
+      factor *= 0.92;
+    }
+  }
+
+  if (blobCount === 1) {
+    factor *= 0.86;
+  } else if (blobCount > 7) {
+    factor *= 1.18;
+  }
+
+  if (state.zoom > 1.2) {
+    factor *= 0.92;
+  }
+
+  return Math.max(0.001, state.triggerCoverage * factor);
+}
+
+function updateDetectionHistory(candidate, width, height) {
+  const now = performance.now();
+  const recent = state.detectionHistory.filter((item) => now - item.time < 850);
+
+  if (!candidate) {
+    state.detectionHistory = recent;
+    return { frames: 0, confidence: 0 };
+  }
+
+  const entry = {
+    x: ((candidate.minX + candidate.maxX) / 2) / width,
+    y: ((candidate.minY + candidate.maxY) / 2) / height,
+    width: Math.max(candidate.maxX - candidate.minX, 1) / width,
+    height: Math.max(candidate.maxY - candidate.minY, 1) / height,
+    score: candidate.score,
+    time: now
+  };
+
+  const matchingFrames = recent.filter((item) => {
+    const distance = Math.hypot(entry.x - item.x, entry.y - item.y);
+    const sizeAllowance = Math.max(0.08, (entry.width + entry.height + item.width + item.height) * 0.55);
+    return distance <= sizeAllowance;
+  }).length + 1;
+
+  state.detectionHistory = [entry, ...recent].slice(0, 8);
+
+  return {
+    frames: matchingFrames,
+    confidence: matchingFrames >= 2 ? clamp(candidate.score * (0.45 + matchingFrames * 0.18)) : 0
+  };
+}
+
+function getTargetMatchStrength(red, green, blue) {
+  const hsv = rgbToHsv(red, green, blue);
+  let bestMatch = 0;
+
+  for (const target of state.activeTargets) {
+    if (matchesTargetColor(hsv, target)) {
+      return 1;
+    }
+
+    if (matchesTargetFamily(hsv, target)) {
+      bestMatch = Math.max(bestMatch, 0.62);
+    }
+  }
+
+  return bestMatch;
 }
 
 function matchesTarget(red, green, blue) {
@@ -667,6 +1251,30 @@ function matchesTargetColor(hsv, target) {
     hsv.saturation >= state.minSaturation &&
     hsv.value >= state.minBrightness &&
     hueDistance(hsv.hue, target.hue) <= state.hueTolerance
+  );
+}
+
+function matchesTargetFamily(hsv, target) {
+  if (foliageToggle.checked && isLikelyFoliage(hsv, target)) {
+    return false;
+  }
+
+  if (isNeutralTarget(target)) {
+    const brightnessTolerance = 0.11 + state.hueTolerance / 260;
+    const saturationCeiling = Math.max(0.32, state.minSaturation * 0.82);
+
+    return (
+      hsv.saturation <= saturationCeiling &&
+      Math.abs(hsv.value - target.value) <= brightnessTolerance
+    );
+  }
+
+  const fallbackHueRange = Math.min(92, state.hueTolerance * 1.65 + 12);
+
+  return (
+    hsv.saturation >= Math.max(0.12, state.minSaturation * 0.55) &&
+    hsv.value >= Math.max(0.1, state.minBrightness * 0.68) &&
+    hueDistance(hsv.hue, target.hue) <= fallbackHueRange
   );
 }
 
@@ -891,7 +1499,9 @@ function updateScanHud(result = null) {
   const filtered = result.filteredMatched > 0 ? `, ${result.filteredMatched} specks ignored` : "";
   const blobs = result.blobCount === 1 ? "1 blob" : `${result.blobCount} blobs`;
   const farBlob = result.distantBlobDetected ? ", far blob" : "";
-  hudDetailText.textContent = `${coverage}% frame, ${blobs}${farBlob}${filtered}`;
+  const steady = result.temporalDetected ? `, steady ${result.persistenceFrames}f` : "";
+  const arc = result.arcScore > 0.45 ? ", arc" : "";
+  hudDetailText.textContent = `${coverage}% frame, ${blobs}${farBlob}${steady}${arc}${filtered}`;
 }
 
 function loadDiscLibrary() {
@@ -919,9 +1529,13 @@ function renderDiscLibrary() {
   }
 
   discList.innerHTML = state.library.map((disc) => {
-    const colors = getDiscColors(disc);
+    const colors = getDiscSearchColors(disc);
+    const profileColors = getDiscProfileColors(disc);
     const visibleColors = colors.slice(0, 3);
     const extraCount = colors.length - visibleColors.length;
+    const meta = profileColors.length > 0
+      ? `Profile + ${colors.length} colors`
+      : colors.length > 1 ? `${colors.length} colors` : colorSearchLabel(colors[0], disc.hueTolerance);
     return `
       <div class="disc-item">
         <span class="disc-swatches">
@@ -930,7 +1544,7 @@ function renderDiscLibrary() {
         </span>
         <span class="disc-info">
           <span class="disc-name">${escapeHtml(disc.name)}</span>
-          <span class="disc-meta">${colors.length > 1 ? `${colors.length} colors` : colorSearchLabel(colors[0], disc.hueTolerance)}</span>
+          <span class="disc-meta">${meta}</span>
         </span>
         <button class="disc-action" type="button" data-action="load" data-id="${disc.id}">Load</button>
         <button class="disc-action" type="button" data-action="edit" data-id="${disc.id}">Edit</button>
@@ -943,7 +1557,8 @@ function renderDiscLibrary() {
 function normalizeDisc(disc) {
   if (!disc || typeof disc.name !== "string") return null;
 
-  const colors = uniqueColors(getDiscColors(disc));
+  const profile = normalizeDiscProfile(disc.profile);
+  const colors = uniqueColors(getDiscColors(disc).length > 0 ? getDiscColors(disc) : getDiscProfileColors({ profile }));
   if (colors.length === 0) return null;
 
   return {
@@ -951,6 +1566,7 @@ function normalizeDisc(disc) {
     name: disc.name,
     colors,
     color: colors[0],
+    profile,
     hueTolerance: Number.isFinite(disc.hueTolerance) ? disc.hueTolerance : 18,
     minSaturation: Number.isFinite(disc.minSaturation) ? disc.minSaturation : 0.42,
     minBrightness: Number.isFinite(disc.minBrightness) ? disc.minBrightness : 0.28,
@@ -962,6 +1578,25 @@ function normalizeDisc(disc) {
 function getDiscColors(disc) {
   const colors = Array.isArray(disc.colors) ? disc.colors : [disc.color];
   return colors.filter((color) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color));
+}
+
+function getDiscProfileColors(disc) {
+  const colors = Array.isArray(disc?.profile?.colors) ? disc.profile.colors : [];
+  return colors.filter((color) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color));
+}
+
+function getDiscSearchColors(disc) {
+  return uniqueColors([...getDiscProfileColors(disc), ...getDiscColors(disc)]).slice(0, 8);
+}
+
+function normalizeDiscProfile(profile) {
+  const colors = getDiscProfileColors({ profile });
+  if (colors.length === 0) return null;
+
+  return {
+    colors: uniqueColors(colors).slice(0, 8),
+    capturedAt: Number.isFinite(profile?.capturedAt) ? profile.capturedAt : Date.now()
+  };
 }
 
 function uniqueColors(colors) {
@@ -1239,6 +1874,10 @@ function drawVideoCover(context, source, width, height) {
 
 function normalizeHue(hue) {
   return ((hue % 360) + 360) % 360;
+}
+
+function clamp(value, min = 0, max = 1) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function rgbToHex(red, green, blue) {

@@ -19,8 +19,9 @@ After opening it:
 3. Use `-` and `+` to zoom the camera view when you need a closer look.
 4. Pick a preset, use the full color wheel, or aim the reticle at the disc and tap `Sample Center`.
 5. Name the disc in `My Bag` and tap `Save Color` if you want to reuse that color later. Save the same disc name again to add another color to that disc, or tap `Edit` to add, replace, or remove saved colors.
-6. Tune `Range`, `Sat`, `Light`, and `Trigger` in the field.
-7. Tap `Hide controls` to slide the menu down and scan with an unobstructed camera view.
+6. Tap `Disc Photo` to capture a circular profile: fill the on-screen circle with the disc, then hold steady for auto-capture or tap `Capture` manually. The app extracts rim/plate/stamp-like colors from inside the circle and saves them to that disc.
+7. Tune `Range`, `Sat`, `Light`, and `Trigger` in the field.
+8. Tap `Hide controls` to slide the menu down and scan with an unobstructed camera view.
 
 The first tap also unlocks browser audio, which is required before iPhone Safari will play the detection beep.
 
@@ -47,6 +48,11 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Use `View` to switch between grey isolation, boosted-color view, mask-only view, edge/outline view, and the unfiltered color feed.
 - Keep `Blob filter` on to ignore isolated one- or two-pixel flecks while still preserving small matching patches from partially hidden or farther-away discs.
 - Keep `Suppress green` on to automatically reject foliage-like greens unless you are searching for a green disc.
-- When controls are hidden, the scan HUD shows the active color, confidence, frame coverage, detected blob count, and ignored speck count.
+- Detection uses a two-stage pass: exact color pixels anchor each candidate, while nearby color-family pixels can help complete a shaded or partially hidden disc blotch.
+- Blob scoring favors compact, disc-like shapes and partial arc/rim patterns, which helps when only a curved slice of the disc is visible through brush.
+- The trigger adapts downward for one strong blob, disc-like shape evidence, zoomed views, and matches that persist across nearby frames.
+- When controls are hidden, the scan HUD shows the active color, confidence, frame coverage, detected blob count, and helper cues such as `far blob`, `steady`, or `arc`.
 - Use `Show controls` to bring the menu back up when lighting changes or you switch discs.
 - Saved discs are stored in the browser on that iPhone. Use `Load` to restore a disc's saved colors and detection settings.
+- Disc photo profiles are stored locally too. They are not full object recognition; they create weighted color profiles from the circular disc photo so the scanner can search multiple disc elements at once.
+- Disc Photo includes an `Auto` toggle. Auto-capture waits for enough color inside the circle, visible outer-ring/rim signal, and a stable profile across several frames.

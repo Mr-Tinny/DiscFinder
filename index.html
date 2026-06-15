@@ -44,6 +44,24 @@
           </div>
           <span id="hudDetailText">Scanning for selected color</span>
         </div>
+
+        <div id="profileCapture" class="profile-capture" hidden>
+          <div class="profile-status" aria-live="polite">
+            <strong id="profileStatusText">Fill circle with disc</strong>
+            <span id="profileStatusDetail">Auto capture waits for a steady profile</span>
+          </div>
+          <div class="profile-guide" aria-hidden="true">
+            <div class="profile-circle"></div>
+          </div>
+          <div class="profile-capture-actions">
+            <label class="toggle profile-auto-toggle">
+              <input id="autoProfileToggle" type="checkbox" checked>
+              <span>Auto</span>
+            </label>
+            <button id="cancelProfileButton" class="secondary-button" type="button">Cancel</button>
+            <button id="snapProfileButton" class="primary-button" type="button">Capture</button>
+          </div>
+        </div>
       </section>
 
       <form class="control-panel" autocomplete="off">
@@ -95,6 +113,11 @@
             <span class="sr-only">Disc name</span>
             <input id="discNameInput" type="text" maxlength="32" placeholder="Name this disc">
           </label>
+
+          <div class="profile-row">
+            <button id="profileCaptureButton" class="secondary-button compact-button" type="button">Disc Photo</button>
+            <span id="profileSummary">Capture a circular disc profile</span>
+          </div>
 
           <div id="discEditPanel" class="disc-edit-panel" hidden>
             <div class="edit-heading">

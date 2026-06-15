@@ -267,6 +267,121 @@ video {
   transition: width 140ms linear;
 }
 
+.profile-capture {
+  position: absolute;
+  z-index: 9;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 18px);
+  background:
+    radial-gradient(circle at center, transparent 0 32%, rgba(0, 0, 0, 0.56) 32.4% 100%);
+}
+
+.profile-capture[hidden] {
+  display: none;
+}
+
+.profile-guide {
+  width: min(78vw, 54vh, 360px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+.profile-status {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 18px);
+  left: 18px;
+  right: 18px;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 8, 7, 0.58);
+  text-align: center;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.profile-status strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.profile-status span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.profile-circle {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 3px solid rgba(255, 255, 255, 0.94);
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.24),
+    0 0 32px rgba(255, 255, 255, 0.18);
+}
+
+.profile-circle::before,
+.profile-circle::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.profile-circle::before {
+  left: 50%;
+  top: 12%;
+  bottom: 12%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.profile-circle::after {
+  left: 12%;
+  right: 12%;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.profile-capture-actions {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.profile-auto-toggle {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(2, 8, 7, 0.48);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.profile-capturing .control-panel,
+.profile-capturing .status-bar,
+.profile-capturing .reticle,
+.profile-capturing .target-box,
+.profile-capturing .scan-hud,
+.profile-capturing .scanner-zoom {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .control-panel {
   position: absolute;
   z-index: 5;
@@ -514,6 +629,22 @@ input[type="color"] {
 
 .disc-name-field input::placeholder {
   color: rgba(244, 251, 247, 0.52);
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.profile-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .disc-list {
@@ -901,6 +1032,10 @@ input[type="range"] {
     right: auto;
     bottom: calc(env(safe-area-inset-bottom) + 12px);
     width: min(360px, calc(100vw - var(--drawer-peek) - 34px));
+  }
+
+  .profile-guide {
+    width: min(52vw, 74vh, 360px);
   }
 
   .reticle {
