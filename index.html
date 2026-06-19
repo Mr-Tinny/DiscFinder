@@ -191,6 +191,11 @@
 
         <div class="audio-row">
           <label class="toggle">
+            <input id="aiToggle" type="checkbox" checked>
+            <span>AI assist</span>
+          </label>
+
+          <label class="toggle">
             <input id="blobFilterToggle" type="checkbox" checked>
             <span>Blob filter</span>
           </label>
@@ -210,9 +215,12 @@
             <span>Flash</span>
           </label>
         </div>
+
+        <span id="aiStatus" class="ai-status" aria-live="polite">AI loads after camera starts</span>
       </form>
     </main>
 
+    <script src="ai-assist.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>

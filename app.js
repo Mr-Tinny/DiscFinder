@@ -27,6 +27,8 @@ const rangeSlider = document.querySelector("#rangeSlider");
 const satSlider = document.querySelector("#satSlider");
 const lightSlider = document.querySelector("#lightSlider");
 const triggerSlider = document.querySelector("#triggerSlider");
+const aiToggle = document.querySelector("#aiToggle");
+const aiStatus = document.querySelector("#aiStatus");
 const audioToggle = document.querySelector("#audioToggle");
 const flashToggle = document.querySelector("#flashToggle");
 const blobFilterToggle = document.querySelector("#blobFilterToggle");
@@ -84,6 +86,12 @@ const state = {
   lastFrameAt: 0,
   lastRawFrame: null,
   detectionHistory: [],
+  aiLoading: false,
+  aiPending: false,
+  aiReady: false,
+  aiConfidence: 0,
+  aiLastResultAt: 0,
+  aiLastCheckAt: 0,
   library: [],
   editingDiscId: null,
   editingColorIndex: 0,
@@ -124,6 +132,7 @@ rangeSlider.addEventListener("input", syncControls);
 satSlider.addEventListener("input", syncControls);
 lightSlider.addEventListener("input", syncControls);
 triggerSlider.addEventListener("input", syncControls);
+aiToggle.addEventListener("change", handleAiToggle);
 viewModeInputs.forEach((input) => {
   input.addEventListener("change", () => {
     if (input.checked) state.viewMode = input.value;
@@ -737,6 +746,79 @@ function setZoom(value) {
   });
 }
 
+function handleAiToggle() {
+  if (!aiToggle.checked) {
+    window.DiscFinderAI?.dispose?.();
+    state.aiLoading = false;
+    state.aiPending = false;
+    state.aiReady = false;
+    state.aiConfidence = 0;
+    state.aiLastResultAt = 0;
+    aiStatus.textContent = "AI assist off";
+    return;
+  }
+
+  aiStatus.textContent = state.running ? "AI loading on device" : "AI loads after camera starts";
+  if (state.running) initializeAiAssist();
+}
+
+async function initializeAiAssist() {
+  if (!aiToggle.checked || state.aiLoading || state.aiReady) return;
+
+  if (!window.DiscFinderAI) {
+    aiStatus.textContent = "AI unavailable; standard scan active";
+    return;
+  }
+
+  state.aiLoading = true;
+  aiStatus.textContent = "AI loading on device";
+  const ready = await window.DiscFinderAI.initialize();
+  state.aiLoading = false;
+  state.aiReady = ready;
+  aiStatus.textContent = ready ? "AI ready; standard scan remains primary" : "AI unavailable; standard scan active";
+}
+
+function maybeRunAiAssist(time) {
+  if (
+    !aiToggle.checked ||
+    !state.aiReady ||
+    state.aiPending ||
+    time - state.aiLastCheckAt < 900 ||
+    video.readyState < 2
+  ) {
+    return;
+  }
+
+  state.aiLastCheckAt = time;
+  state.aiPending = true;
+
+  window.DiscFinderAI.analyze(video)
+    .then((result) => {
+      if (!aiToggle.checked) return;
+
+      if (!result.available) {
+        state.aiReady = false;
+        state.aiConfidence = 0;
+        aiStatus.textContent = "AI paused; standard scan active";
+        return;
+      }
+
+      state.aiConfidence = clamp(result.confidence || 0);
+      state.aiLastResultAt = performance.now();
+      aiStatus.textContent = state.aiConfidence >= 0.2
+        ? `AI possible disc ${Math.round(state.aiConfidence * 100)}%`
+        : "AI ready; standard scan remains primary";
+    })
+    .catch(() => {
+      state.aiReady = false;
+      state.aiConfidence = 0;
+      aiStatus.textContent = "AI paused; standard scan active";
+    })
+    .finally(() => {
+      state.aiPending = false;
+    });
+}
+
 async function startCamera() {
   try {
     startButton.disabled = true;
@@ -764,6 +846,7 @@ async function startCamera() {
     canvas.classList.add("active");
     startButton.querySelector("span:last-child").textContent = "Scanning";
     setStatus("Scanning", false, 0);
+    initializeAiAssist();
     requestAnimationFrame(analyzeFrame);
   } catch (error) {
     startButton.disabled = false;
@@ -809,6 +892,7 @@ function analyzeFrame(time) {
   const result = detectAndFilterColor(image, sampleWidth, sampleHeight);
   ctx.putImageData(image, 0, 0);
   renderResult(result);
+  maybeRunAiAssist(time);
 
   requestAnimationFrame(analyzeFrame);
 }
@@ -873,13 +957,21 @@ function detectAndFilterColor(image, width, height) {
     primaryCandidate.strictRatio >= 0.2 &&
     temporalResult.frames >= 3
   );
-  const detected = coverage >= adaptiveTrigger || distantBlobDetected || temporalDetected;
+  const aiFresh = aiToggle.checked && state.aiReady && performance.now() - state.aiLastResultAt < 1600;
+  const aiConfirmed = Boolean(primaryCandidate && aiFresh && state.aiConfidence >= 0.28);
+  const aiBoost = aiConfirmed ? Math.min(0.14, state.aiConfidence * 0.16) : 0;
+  const detected = coverage >= adaptiveTrigger || distantBlobDetected || temporalDetected || (
+    aiConfirmed &&
+    primaryCandidate.strictPixels >= 2 &&
+    primaryCandidate.strictRatio >= 0.18 &&
+    primaryCandidate.score >= 0.5
+  );
   const confidence = Math.min(1, Math.max(
     coverageConfidence,
     distantBlobConfidence,
     temporalResult.confidence,
     candidateEvidence * 0.92
-  ));
+  ) + aiBoost);
   const box = primaryCandidate || blobResult.combinedBox;
 
   return {
@@ -895,6 +987,8 @@ function detectAndFilterColor(image, width, height) {
     largestBlobPixels: blobResult.largestBlobPixels,
     distantBlobDetected,
     temporalDetected,
+    aiConfirmed,
+    aiConfidence: aiFresh ? state.aiConfidence : 0,
     persistenceFrames: temporalResult.frames,
     shapeScore: primaryCandidate ? primaryCandidate.shapeScore : 0,
     arcScore: primaryCandidate ? primaryCandidate.arcScore : 0,
@@ -1537,7 +1631,8 @@ function updateScanHud(result = null) {
   const farBlob = result.distantBlobDetected ? ", far blob" : "";
   const steady = result.temporalDetected ? `, steady ${result.persistenceFrames}f` : "";
   const arc = result.arcScore > 0.45 ? ", arc" : "";
-  hudDetailText.textContent = `${coverage}% frame, ${blobs}${farBlob}${steady}${arc}${filtered}`;
+  const ai = result.aiConfirmed ? `, AI ${Math.round(result.aiConfidence * 100)}%` : "";
+  hudDetailText.textContent = `${coverage}% frame, ${blobs}${farBlob}${steady}${arc}${ai}${filtered}`;
 }
 
 function loadDiscLibrary() {

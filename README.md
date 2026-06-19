@@ -27,6 +27,18 @@ The first tap also unlocks browser audio, which is required before iPhone Safari
 
 The audio alert changes with confidence: weak matches give one slower beep, medium matches give two beeps, and strong matches give a faster three-beep pattern.
 
+## Optional AI Assist
+
+`AI assist` is an experimental, fail-open confirmation layer. After the camera starts, it lazily downloads MediaPipe Tasks Vision and a small EfficientDet Lite object-detection model, then runs inference on the device looking for the model's `frisbee` category.
+
+- The standard color/blob/profile detector remains primary and keeps working if AI is off, loading, unsupported, or unavailable.
+- AI never lowers or blocks a normal detection. It can add only a small confidence boost when the standard detector already has an exact-color candidate.
+- Camera frames are passed to the local in-browser model and are not uploaded for inference.
+- The runtime and model require internet access on first load and may be retained by the browser cache afterward.
+- Turn off `AI assist` to dispose of the model and continue with the standard detector.
+
+The AI feature is isolated in `ai-assist.js`. To remove it permanently, delete that file, remove its script tag and AI controls from `index.html`, and remove the functions and state fields named with `Ai`/`ai` in `app.js`. The rest of the detection pipeline does not depend on it.
+
 ## Local layout test
 
 From this folder, you can run:

@@ -911,6 +911,15 @@ input[type="range"] {
   flex-wrap: wrap;
 }
 
+.ai-status {
+  display: block;
+  margin-top: -7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-align: right;
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;
