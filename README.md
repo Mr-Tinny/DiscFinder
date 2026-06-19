@@ -49,6 +49,7 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Keep `Blob filter` on to ignore isolated one- or two-pixel flecks while still preserving small matching patches from partially hidden or farther-away discs.
 - Keep `Suppress green` on to automatically reject foliage-like greens unless you are searching for a green disc.
 - Detection uses a two-stage pass: exact color pixels anchor each candidate, while nearby color-family pixels can help complete a shaded or partially hidden disc blotch.
+- Nearby-family pixels now contribute only partial evidence; alerts require a stronger proportion of exact target pixels so broad lookalike colors do not dominate detection.
 - Blob scoring favors compact, disc-like shapes and partial arc/rim patterns, which helps when only a curved slice of the disc is visible through brush.
 - The trigger adapts downward for one strong blob, disc-like shape evidence, zoomed views, and matches that persist across nearby frames.
 - When controls are hidden, the scan HUD shows the active color, confidence, frame coverage, detected blob count, and helper cues such as `far blob`, `steady`, or `arc`.
@@ -56,3 +57,4 @@ Then open `http://localhost:8080` on the same computer. This is useful for layou
 - Saved discs are stored in the browser on that iPhone. Use `Load` to restore a disc's saved colors and detection settings.
 - Disc photo profiles are stored locally too. They are not full object recognition; they create weighted color profiles from the circular disc photo so the scanner can search multiple disc elements at once.
 - Disc Photo includes an `Auto` toggle. Auto-capture waits for enough color inside the circle, visible outer-ring/rim signal, and a stable profile across several frames.
+- Photo profiles limit generic neutral stamp/shadow colors and cap the active search palette to reduce unrelated matches.

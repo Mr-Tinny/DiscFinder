@@ -612,21 +612,33 @@ function extractDiscProfileFromVideo() {
       const green = Math.round(bin.green / bin.count);
       const blue = Math.round(bin.blue / bin.count);
       const saturation = bin.saturation / bin.count;
+      const value = bin.value / bin.count;
       return {
         hex: rgbToHex(red, green, blue),
         score: bin.weight * (1 + saturation * 0.22),
-        count: bin.count
+        count: bin.count,
+        saturation,
+        value
       };
     })
     .sort((a, b) => b.score - a.score);
 
   const colors = [];
+  let neutralColors = 0;
   for (const candidate of candidates) {
-    if (colors.every((color) => isDistinctProfileColor(color, candidate.hex))) {
-      colors.push(candidate.hex);
+    const isNeutral = candidate.saturation < 0.2;
+    const isMinorNeutral = isNeutral && candidate.count < sampleCount * 0.08;
+
+    if (isMinorNeutral || (isNeutral && neutralColors >= 1)) {
+      continue;
     }
 
-    if (colors.length >= 6) break;
+    if (colors.every((color) => isDistinctProfileColor(color, candidate.hex))) {
+      colors.push(candidate.hex);
+      if (isNeutral) neutralColors += 1;
+    }
+
+    if (colors.length >= 5) break;
   }
 
   return {
@@ -832,7 +844,10 @@ function detectAndFilterColor(image, width, height) {
   renderFrameByMode(data, matchMask, width, height);
 
   const matched = blobResult.matched;
-  const coverage = sampled > 0 ? matched / sampled : 0;
+  const strictMatched = blobResult.strictMatched;
+  const fallbackMatched = Math.max(0, matched - strictMatched);
+  const evidenceMatched = strictMatched + fallbackMatched * 0.24;
+  const coverage = sampled > 0 ? evidenceMatched / sampled : 0;
   const primaryCandidate = blobResult.primaryCandidate;
   const adaptiveTrigger = getAdaptiveTriggerCoverage(primaryCandidate, blobResult.blobCount);
   const coverageConfidence = Math.min(1, coverage / Math.max(adaptiveTrigger, 0.0001));
@@ -840,20 +855,30 @@ function detectAndFilterColor(image, width, height) {
   const temporalResult = updateDetectionHistory(primaryCandidate, width, height);
   const distantBlobDetected = Boolean(
     primaryCandidate &&
-    primaryCandidate.pixels >= Math.round(distantBlobPixels * 0.55) &&
-    primaryCandidate.strictPixels >= 1 &&
-    primaryCandidate.score >= 0.54
+    primaryCandidate.pixels >= Math.round(distantBlobPixels * 0.7) &&
+    primaryCandidate.strictPixels >= 2 &&
+    primaryCandidate.strictRatio >= 0.2 &&
+    primaryCandidate.score >= 0.62
   );
-  const distantBlobConfidence = primaryCandidate
-    ? Math.min(1, (primaryCandidate.score * 0.72) + (primaryCandidate.pixels / Math.max(distantBlobPixels * 3, 1)))
+  const candidateEvidence = primaryCandidate
+    ? primaryCandidate.score * clamp(primaryCandidate.strictRatio * 2.4)
     : 0;
-  const temporalDetected = Boolean(primaryCandidate && primaryCandidate.score >= 0.46 && temporalResult.frames >= 2);
+  const distantBlobConfidence = primaryCandidate
+    ? Math.min(1, (candidateEvidence * 0.72) + (primaryCandidate.pixels / Math.max(distantBlobPixels * 3.5, 1)))
+    : 0;
+  const temporalDetected = Boolean(
+    primaryCandidate &&
+    primaryCandidate.score >= 0.56 &&
+    primaryCandidate.strictPixels >= 2 &&
+    primaryCandidate.strictRatio >= 0.2 &&
+    temporalResult.frames >= 3
+  );
   const detected = coverage >= adaptiveTrigger || distantBlobDetected || temporalDetected;
   const confidence = Math.min(1, Math.max(
     coverageConfidence,
     distantBlobConfidence,
     temporalResult.confidence,
-    primaryCandidate ? primaryCandidate.score * 0.92 : 0
+    candidateEvidence * 0.92
   ));
   const box = primaryCandidate || blobResult.combinedBox;
 
@@ -863,6 +888,7 @@ function detectAndFilterColor(image, width, height) {
     confidence,
     adaptiveTrigger,
     matched,
+    strictMatched,
     rawMatched,
     filteredMatched: Math.max(0, rawMatched - matched),
     blobCount: blobResult.blobCount,
@@ -886,6 +912,7 @@ function filterMatchBlobs(mask, strictMask, width, height) {
   const minimumBlobPixels = getMinimumBlobPixels(width, height);
   const candidates = [];
   let matched = 0;
+  let strictMatched = 0;
   let blobCount = 0;
   let minX = width;
   let minY = height;
@@ -972,6 +999,7 @@ function filterMatchBlobs(mask, strictMask, width, height) {
     candidates.push(candidate);
     blobCount += 1;
     matched += componentLength;
+    strictMatched += candidate.strictPixels;
     minX = Math.min(minX, localMinX);
     minY = Math.min(minY, localMinY);
     maxX = Math.max(maxX, localMaxX);
@@ -986,6 +1014,7 @@ function filterMatchBlobs(mask, strictMask, width, height) {
 
   return {
     matched,
+    strictMatched,
     blobCount,
     largestBlobPixels,
     primaryCandidate,
@@ -1026,6 +1055,7 @@ function summarizeMatchMask(mask, strictMask, width, height) {
 
   return {
     matched,
+    strictMatched: strictPixels,
     blobCount: matched > 0 ? 1 : 0,
     largestBlobPixels: matched,
     primaryCandidate,
@@ -1111,14 +1141,14 @@ function scoreBlobCandidate({
   const fillScore = clamp((fillRatio - 0.05) / 0.42);
   const rimScore = clamp((edgeDensity - 0.16) / 0.5);
   const shapeScore = clamp(aspectScore * 0.55 + fillScore * 0.25 + rimScore * 0.2);
-  const arcScore = clamp((arcCoverage - 0.16) / 0.42);
+  const arcScore = clamp((arcCoverage - 0.24) / 0.44) * aspectScore * clamp(fillRatio / 0.2);
   const sizeScore = clamp(componentLength / Math.max(getDistantBlobPixels(width, height), 1));
-  const strictScore = clamp(strictRatio * 2.4);
+  const strictScore = clamp(strictRatio * 2.8);
   let score = clamp(
-    strictScore * 0.36 +
+    strictScore * 0.48 +
     shapeScore * 0.22 +
-    arcScore * 0.24 +
-    sizeScore * 0.18
+    arcScore * 0.18 +
+    sizeScore * 0.12
   );
 
   if (strictPixels === 0) {
@@ -1144,37 +1174,41 @@ function scoreBlobCandidate({
 }
 
 function isViableBlobCandidate(candidate) {
-  if (candidate.strictPixels < 1) return false;
-  if (candidate.pixels >= 3 && candidate.score >= 0.34) return true;
-  return candidate.pixels >= 2 && candidate.strictRatio >= 0.5 && candidate.score >= 0.28;
+  if (candidate.strictPixels < 2) return false;
+
+  if (candidate.pixels <= 8) {
+    return candidate.strictRatio >= 0.3 && candidate.score >= 0.4;
+  }
+
+  return candidate.strictRatio >= 0.14 && candidate.score >= 0.44;
 }
 
 function getAdaptiveTriggerCoverage(candidate, blobCount) {
   let factor = 1;
 
-  if (candidate) {
-    factor *= 1 - clamp(candidate.score) * 0.34;
+  if (candidate && candidate.strictRatio >= 0.2) {
+    factor *= 1 - clamp(candidate.score) * 0.24;
 
-    if (candidate.arcScore > 0.35) {
-      factor *= 0.9;
+    if (candidate.arcScore > 0.48) {
+      factor *= 0.94;
     }
 
-    if (candidate.strictRatio > 0.36) {
-      factor *= 0.92;
+    if (candidate.strictRatio > 0.42) {
+      factor *= 0.95;
     }
   }
 
   if (blobCount === 1) {
-    factor *= 0.86;
+    factor *= 0.94;
   } else if (blobCount > 7) {
-    factor *= 1.18;
+    factor *= 1.24;
   }
 
   if (state.zoom > 1.2) {
-    factor *= 0.92;
+    factor *= 0.97;
   }
 
-  return Math.max(0.001, state.triggerCoverage * factor);
+  return Math.max(state.triggerCoverage * 0.58, state.triggerCoverage * factor);
 }
 
 function updateDetectionHistory(candidate, width, height) {
@@ -1205,7 +1239,9 @@ function updateDetectionHistory(candidate, width, height) {
 
   return {
     frames: matchingFrames,
-    confidence: matchingFrames >= 2 ? clamp(candidate.score * (0.45 + matchingFrames * 0.18)) : 0
+    confidence: matchingFrames >= 3
+      ? clamp(candidate.score * clamp(candidate.strictRatio * 2.2) * (0.42 + matchingFrames * 0.14))
+      : 0
   };
 }
 
@@ -1219,7 +1255,7 @@ function getTargetMatchStrength(red, green, blue) {
     }
 
     if (matchesTargetFamily(hsv, target)) {
-      bestMatch = Math.max(bestMatch, 0.62);
+      bestMatch = Math.max(bestMatch, 0.35);
     }
   }
 
@@ -1260,8 +1296,8 @@ function matchesTargetFamily(hsv, target) {
   }
 
   if (isNeutralTarget(target)) {
-    const brightnessTolerance = 0.11 + state.hueTolerance / 260;
-    const saturationCeiling = Math.max(0.32, state.minSaturation * 0.82);
+    const brightnessTolerance = 0.085 + state.hueTolerance / 320;
+    const saturationCeiling = Math.max(0.27, state.minSaturation * 0.72);
 
     return (
       hsv.saturation <= saturationCeiling &&
@@ -1269,11 +1305,11 @@ function matchesTargetFamily(hsv, target) {
     );
   }
 
-  const fallbackHueRange = Math.min(92, state.hueTolerance * 1.65 + 12);
+  const fallbackHueRange = Math.min(62, state.hueTolerance * 1.28 + 8);
 
   return (
-    hsv.saturation >= Math.max(0.12, state.minSaturation * 0.55) &&
-    hsv.value >= Math.max(0.1, state.minBrightness * 0.68) &&
+    hsv.saturation >= Math.max(0.16, state.minSaturation * 0.68) &&
+    hsv.value >= Math.max(0.12, state.minBrightness * 0.78) &&
     hueDistance(hsv.hue, target.hue) <= fallbackHueRange
   );
 }
@@ -1586,7 +1622,16 @@ function getDiscProfileColors(disc) {
 }
 
 function getDiscSearchColors(disc) {
-  return uniqueColors([...getDiscProfileColors(disc), ...getDiscColors(disc)]).slice(0, 8);
+  const profileColors = uniqueColors(getDiscProfileColors(disc));
+  const profileSet = new Set(profileColors);
+  const manualColors = uniqueColors(getDiscColors(disc)).filter((color) => !profileSet.has(color));
+  const chromaticProfileColors = profileColors.filter((color) => rgbToHsvFromHex(color).saturation >= 0.2);
+  const neutralProfileColors = profileColors.filter((color) => rgbToHsvFromHex(color).saturation < 0.2);
+  const usefulProfileColors = chromaticProfileColors.length > 0
+    ? [...chromaticProfileColors, ...neutralProfileColors.slice(0, 1)]
+    : neutralProfileColors.slice(0, 3);
+
+  return uniqueColors([...usefulProfileColors, ...manualColors]).slice(0, 6);
 }
 
 function normalizeDiscProfile(profile) {
@@ -1594,7 +1639,7 @@ function normalizeDiscProfile(profile) {
   if (colors.length === 0) return null;
 
   return {
-    colors: uniqueColors(colors).slice(0, 8),
+    colors: uniqueColors(colors).slice(0, 6),
     capturedAt: Number.isFinite(profile?.capturedAt) ? profile.capturedAt : Date.now()
   };
 }
